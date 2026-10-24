@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "generated_at": null,
+  "expires_at": null,
+  "overall": "unknown",
+  "summary_fr": "Aucun signal de vie reçu. L'état du service n'est pas confirmé.",
+  "summary_en": "No heartbeat received. Service status is unconfirmed.",
+  "components": [
+    {
+      "id": "portal",
+      "label_fr": "Portail",
+      "label_en": "Portal",
+      "status": "unknown",
+      "detail_fr": "Aucun signal de vie reçu pour le portail.",
+      "detail_en": "No heartbeat received for the portal."
+    },
+    {
+      "id": "docs",
+      "label_fr": "Documentation",
+      "label_en": "Documentation",
+      "status": "unknown",
+      "detail_fr": "Aucun signal de vie reçu pour la documentation.",
+      "detail_en": "No heartbeat received for the documentation."
+    },
+    {
+      "id": "apps",
+      "label_fr": "Applications clients",
+      "label_en": "Client applications",
+      "status": "unknown",
+      "detail_fr": "Aucun signal de vie reçu pour les applications clients.",
+      "detail_en": "No heartbeat received for client applications."
+    },
+    {
+      "id": "llm",
+      "label_fr": "Passerelle IA",
+      "label_en": "AI gateway",
+      "status": "unknown",
+      "detail_fr": "Aucun signal de vie reçu pour la passerelle IA.",
+      "detail_en": "No heartbeat received for the AI gateway."
+    },
+    {
+      "id": "status",
+      "label_fr": "Page d'état",
+      "label_en": "Status page",
+      "status": "unknown",
+      "detail_fr": "Aucun signal de vie reçu pour la page d'état.",
+      "detail_en": "No heartbeat received for the status page."
+    }
+  ],
+  "incidents": []
+}
