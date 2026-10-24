@@ -34,7 +34,7 @@ The platform command `cmd/brandlint` is the design gate for every SBK-operated s
 - The custom domain CNAME target is `sbk-techno.github.io`. Create a DNS CNAME record for `status.ia` that points to `sbk-techno.github.io`.
 - The `CNAME` file in this repository contains `status.ia.sbktechno.com` followed by one newline. GitHub Pages uses it to serve the custom domain.
 - `.nojekyll` disables Jekyll processing. GitHub Pages serves the committed output as-is; the generator runs before push, not on Pages. Pages is configured to deploy from the `main` branch root.
-- The custom domain is not live yet: the `status.ia` CNAME still has to be created in the DNS zone. Until then, Pages has no valid certificate for `status.ia.sbktechno.com`.
+- The custom domain is live at `https://status.ia.sbktechno.com/`; the Pages certificate is valid and HTTPS enforcement is enabled.
 - `404.html` is served by GitHub Pages for unknown paths. Its links use absolute paths because a 404 response can appear at any URL.
 - Enable HTTPS for the custom domain in the repository's Pages settings.
 
