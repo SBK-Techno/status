@@ -20,8 +20,43 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Verify the shared brand assets
-        run: sha256sum -c brand.lock
+      - name: Verify the generated brand assets
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          manifest = json.loads(Path("brand.manifest.json").read_text(encoding="utf-8"))
+          if manifest.get("version") != 1 or not manifest.get("generatedBy"):
+              sys.exit("brand.manifest.json must declare version 1 and generatedBy")
+          assets = manifest.get("assets")
+          if not isinstance(assets, list) or not assets:
+              sys.exit("brand.manifest.json must declare assets")
+
+          pages = {name: Path(name).read_text(encoding="utf-8") for name in ("index.html", "404.html")}
+          for name, text in pages.items():
+              if "{{asset:" in text:
+                  sys.exit(f"{name}: unresolved brand placeholder")
+
+          for asset in assets:
+              if not asset.get("publish"):
+                  continue
+              path = Path(asset["file"])
+              if not path.is_file():
+                  sys.exit(f"{path}: missing")
+              data = path.read_bytes()
+              if hashlib.sha256(data).hexdigest() != asset["sha256"]:
+                  sys.exit(f"{path}: digest mismatch")
+              if len(data) != asset["bytes"]:
+                  sys.exit(f"{path}: size mismatch")
+              for name, text in pages.items():
+                  if asset["file"] not in text:
+                      sys.exit(f"{name}: does not reference {asset['file']}")
+
+          print(f"brand manifest ok: {len(assets)} assets")
+          PY
 
       - name: Validate status data and static assets
         run: |

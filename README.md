@@ -13,27 +13,27 @@ Public, static service status page for `status.sbktechno.com`, hosted on GitHub 
 
 ## Brand and shared assets
 
-The site is an SBK-operated surface, so it uses the same web brand system as the operator portal and the private documentation. It consumes four shared files from `SBK-Techno/brand` and never reimplements their colours, type, or logos:
+The site is an SBK-operated surface, so it uses the same web brand system as the operator portal and the private documentation. The brand repository's `assets.json` is the single owner of the logical web assets, and `assets/web/manifest.json` maps each logical name to a content-hashed file, digest, media type, and byte size. This repository never keeps its own asset list.
 
-| File | Source in `sbk-brand` | Role |
-| --- | --- | --- |
-| `brand.css` | `assets/web/brand.css` | Generated tokens, type, shell, footer, table, badge, and status primitives |
-| `logo-color.svg` | `assets/svg/logo-color.svg` | Header wordmark |
-| `icon-color.svg` | `assets/svg/icon-color.svg` | Footer mark and SVG favicon |
-| `favicon.ico` | `assets/web/favicon.ico` | Browser favicon |
+`templates/index.html` and `templates/404.html` are the source. They reference assets with `{{asset:<logical-name>}}` placeholders. `make brand` runs `cmd/genstatus` from the platform checkout, which:
 
-`make brand` copies those files from a sibling `../sbk-brand` checkout and rewrites `brand.lock` with their SHA-256 digests. Use `make brand BRAND=/path/to/sbk-brand` to read another checkout. `make brand-check` verifies the recorded digests, and CI runs the same check before validating the status data. Never edit the copied files here; change the brand repository and run `make brand`. Neither target is needed to serve the site: GitHub Pages serves the repository root as-is, and the Makefile only refreshes shared assets and runs local checks.
+- resolves every placeholder from the brand manifest and fails on an unknown name or an unresolved placeholder;
+- writes the hashed assets and the resolved `index.html` and `404.html`;
+- writes `brand.manifest.json` for this repository;
+- removes stale hashed assets and the retired `brand.lock`.
 
-The platform command `cmd/brandlint` is the design gate for every SBK-operated surface. It rejects raw colours, literal font stacks, external stylesheet imports, and missing shell markers (`data-surface="provider"`, `sbk-surface`, `sbk-header`, `sbk-footer`, `brand.css`, `logo-color.svg`, and `Exploité par SBK Techno`). It also fails when this repository's `brand.css` drifts from the brand checkout or when a `brand.lock` digest does not match the copied bytes. The status workflow does not duplicate that scan: platform CI owns the design gate, and this repository owns asset integrity and status data.
+Never edit the root `index.html`, `404.html`, the hashed assets, or `brand.manifest.json` by hand. Change the template or the brand repository and run `make brand`. `make brand-check` verifies the committed output without writing. Use `make brand BRAND=/path/to/sbk-brand` to read another brand checkout.
 
-`styles.css` contains only status-page layout. Every colour, font family, spacing value, and radius resolves through a `--sbk-*` token declared in `brand.css`.
+The platform command `cmd/brandlint` is the design gate for every SBK-operated surface. It reads `brand.manifest.json` and the brand manifest, and it rejects raw colours, literal font stacks, external stylesheet imports, missing shell markers (`data-surface="provider"`, `sbk-surface`, `sbk-header`, `sbk-footer`, and `Exploité par SBK Techno`), unresolved placeholders, digest or size drift, and a published asset that a page does not reference. Client apps are exempt.
+
+`styles.css` contains only status-page layout. Every colour, font family, spacing value, and radius resolves through a `--sbk-*` token declared in the brand stylesheet.
 
 ## Hosting and DNS
 
 - GitHub Pages origin: `sbk-techno.github.io`.
 - The custom domain CNAME target is `sbk-techno.github.io`. Create a DNS CNAME record for `status` that points to `sbk-techno.github.io`.
 - The `CNAME` file in this repository contains `status.sbktechno.com` followed by one newline. GitHub Pages uses it to serve the custom domain.
-- `.nojekyll` disables Jekyll processing. No build step is required. Configure GitHub Pages to deploy from the `main` branch root.
+- `.nojekyll` disables Jekyll processing. GitHub Pages serves the committed output as-is; the generator runs before push, not on Pages. Configure GitHub Pages to deploy from the `main` branch root.
 - `404.html` is served by GitHub Pages for unknown paths. Its links use absolute paths because a 404 response can appear at any URL.
 - Enable HTTPS for the custom domain in the repository's Pages settings.
 
@@ -139,7 +139,8 @@ make validate
 
 The workflow checks:
 
-- The four shared assets match the SHA-256 digests in `brand.lock`.
+- The published assets match the SHA-256 digests and byte sizes in `brand.manifest.json`.
+- `index.html` and `404.html` reference every published asset and contain no unresolved placeholder.
 - `status.json` parses, uses schema version 1, and has valid overall, component, and incident statuses.
 - `components` is a non-empty list with unique ids and both language labels.
 - `generated_at` and `expires_at` are null or valid UTC ISO 8601 timestamps.
@@ -147,7 +148,7 @@ The workflow checks:
 - `CNAME` is exactly `status.sbktechno.com` with a final newline.
 - `index.html`, `styles.css`, and `app.js` exist and are non-empty.
 
-`make validate` runs the JSON parse and the brand lock check locally. The platform `cmd/brandlint` scan runs in platform CI and also scans this sibling checkout when present.
+`make validate` runs the JSON parse and delegates to the platform generator check locally. The status workflow verifies the manifest and assets without a platform checkout; the platform `cmd/brandlint` scan is the canonical design gate and also scans this sibling checkout when present.
 
 No third-party action is used beyond `actions/checkout`.
 

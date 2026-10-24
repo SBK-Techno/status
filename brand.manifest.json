@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "generatedBy": "cmd/genstatus",
+  "assets": [
+    {
+      "name": "brand.css",
+      "file": "brand.864416786197.css",
+      "mediaType": "text/css; charset=utf-8",
+      "publish": true,
+      "sha256": "864416786197d45ac4c09bdfaac86f251b4e51d9362dc79f5aed82f663f38348",
+      "bytes": 7416
+    },
+    {
+      "name": "favicon.ico",
+      "file": "favicon.a92e4a164eb7.ico",
+      "mediaType": "image/x-icon",
+      "publish": true,
+      "sha256": "a92e4a164eb7004b8f4d840a670a74d9225980b5169ef44ab73199b996a9e0a3",
+      "bytes": 8168
+    },
+    {
+      "name": "icon-color.svg",
+      "file": "icon-color.28c7970f44f7.svg",
+      "mediaType": "image/svg+xml",
+      "publish": true,
+      "sha256": "28c7970f44f7a07a6f502da37e865cec221c31b12e9a3850419249711be3de2f",
+      "bytes": 3636
+    },
+    {
+      "name": "logo-color.svg",
+      "file": "logo-color.4584ff092a16.svg",
+      "mediaType": "image/svg+xml",
+      "publish": true,
+      "sha256": "4584ff092a1661ba43ca785c309505ca07e4187dfb000d8733d2cbc6c6dba367",
+      "bytes": 13055
+    }
+  ]
+}
