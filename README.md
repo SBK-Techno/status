@@ -17,10 +17,10 @@ The site is an SBK-operated surface, so it uses the same web brand system as the
 
 `templates/index.html` and `templates/404.html` are the source. They reference assets with `{{asset:<logical-name>}}` placeholders. `make brand` runs `cmd/genstatus` from the platform checkout, which:
 
-- resolves every placeholder from the brand manifest and fails on an unknown name or an unresolved placeholder;
+- resolves every placeholder from the brand manifest and fails on an unknown name, an unresolved placeholder, or a literal hashed filename;
 - writes the hashed assets and the resolved `index.html` and `404.html`;
 - writes `brand.manifest.json` for this repository;
-- removes stale hashed assets and the retired `brand.lock`.
+- retains the previous hashed assets so a page that is still cached can load them, and removes the retired `brand.lock`.
 
 Never edit the root `index.html`, `404.html`, the hashed assets, or `brand.manifest.json` by hand. Change the template or the brand repository and run `make brand`. `make brand-check` verifies the committed output without writing. Use `make brand BRAND=/path/to/sbk-brand` to read another brand checkout.
 
