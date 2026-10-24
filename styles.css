@@ -56,7 +56,7 @@ main.sbk-shell {
   align-items: center;
   justify-content: center;
   padding-inline: var(--sbk-space-2);
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--sbk-radius-sm);
   appearance: none;
   background: transparent;
@@ -75,9 +75,11 @@ main.sbk-shell {
 }
 
 .lang-btn[aria-pressed="true"] {
-  background: var(--sbk-accent-soft);
-  border-color: var(--sbk-accent);
   color: var(--sbk-accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: var(--sbk-space-1);
 }
 
 .lang-sep {
