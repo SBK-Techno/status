@@ -10,5 +10,6 @@ brand-check:
 	cd "$(PLATFORM)" && go run ./cmd/genstatus -root ../sbk-status -brand "$(BRAND)" -check
 
 validate:
-	python3 -m json.tool status.json >/dev/null
+	python3 scripts/validate_status.py
+	python3 -m unittest discover -s scripts -p '*_test.py'
 	$(MAKE) brand-check
