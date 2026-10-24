@@ -1,0 +1,87 @@
+name: publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: Base64 status document
+        required: true
+        type: string
+      signature:
+        description: Lowercase hex HMAC-SHA256 of the decoded payload
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: status-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout status
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify the signed payload
+        env:
+          STATUS_HEARTBEAT_HMAC: ${{ secrets.STATUS_HEARTBEAT_HMAC }}
+          PAYLOAD: ${{ inputs.payload }}
+          SIGNATURE: ${{ inputs.signature }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import hmac
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          from validate_status import validate_document
+
+          key = os.environ.get("STATUS_HEARTBEAT_HMAC", "")
+          if not key:
+              sys.exit("STATUS_HEARTBEAT_HMAC is not configured")
+          try:
+              payload = base64.b64decode(os.environ["PAYLOAD"], validate=True)
+          except (ValueError, KeyError) as exc:
+              sys.exit(f"payload is not base64: {exc}")
+          if len(payload) > 65536:
+              sys.exit("payload exceeds 64 KiB")
+          expected = hmac.new(key.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+          if not hmac.compare_digest(expected, os.environ.get("SIGNATURE", "")):
+              sys.exit("signature mismatch")
+          if not payload.endswith(b"\n"):
+              sys.exit("payload must end with a newline")
+          try:
+              document = json.loads(payload)
+          except json.JSONDecodeError as exc:
+              sys.exit(f"payload is not JSON: {exc}")
+          errors = validate_document(document)
+          if errors:
+              for error in errors:
+                  print(f"  - {error}", file=sys.stderr)
+              sys.exit("payload does not match the status contract")
+          Path("status.json").write_bytes(payload)
+          PY
+
+      - name: Validate the written site
+        run: python3 scripts/validate_status.py
+
+      - name: Commit the heartbeat
+        run: |
+          git config user.name "SBK status publisher"
+          git config user.email "status@sbktechno.com"
+          git add status.json
+          if git diff --cached --quiet; then
+            echo "status unchanged"
+            exit 0
+          fi
+          git commit -m "chore(status): publish signed heartbeat"
+          git push

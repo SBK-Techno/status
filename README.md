@@ -38,9 +38,13 @@ The platform command `cmd/brandlint` is the design gate for every SBK-operated s
 - `404.html` is served by GitHub Pages for unknown paths. Its links use absolute paths because a 404 response can appear at any URL.
 - Enable HTTPS for the custom domain in the repository's Pages settings.
 
-## Heartbeat (pending)
+## Heartbeat
 
-The platform will write `status.json` atomically at the site root. The publisher is not implemented yet, so the committed seed is served and the page shows a stale signal. The page fetches the file every 60 seconds with `cache: "no-store"` and a cache-busting query. It refreshes immediately when the tab becomes visible after being hidden, and it does not poll while hidden.
+The platform `cmd/statuspublisher` probes the public surfaces, writes `status.json` atomically, signs the exact bytes with HMAC-SHA256, and dispatches `.github/workflows/publish.yml`. The workflow verifies the signature with the `STATUS_HEARTBEAT_HMAC` repository secret, validates the document with `scripts/validate_status.py`, writes `status.json`, and pushes it; Pages then deploys the branch. The publisher is implemented, but the host timer and credentials must be installed before the page leaves its stale seed.
+
+The host reads the key from `/run/secrets/status-heartbeat-hmac` and a fine-grained GitHub token with Actions write access on this repository from `/run/secrets/status-dispatch-token`. The HMAC value must equal the repository secret. Never commit either value.
+
+The page fetches the file every 60 seconds with `cache: "no-store"` and a cache-busting query. It refreshes immediately when the tab becomes visible after being hidden, and it does not poll while hidden.
 
 Freshness rules:
 
@@ -50,7 +54,7 @@ Freshness rules:
 - Stale data keeps the component rows and their last reported state, marks them `Signal périmé`, forces the overall hero state to `unknown`, and shows the stale banner.
 - A failed fetch keeps the last rendered data and shows an error banner with a retry button. If nothing has loaded yet, the page shows an explicit error state.
 
-The publisher must write `generated_at` and `expires_at` in UTC. Keep `expires_at` no more than 15 minutes after `generated_at`. The page treats the signal as stale after that window even if `expires_at` is later.
+The publisher writes `generated_at` and `expires_at` in UTC. `expires_at` is at most 15 minutes after `generated_at`. The page treats the signal as stale after that window even if `expires_at` is later, so the timer must run more often than 15 minutes. Incidents stay operator-owned: the publisher copies them from its configured incident file and never invents or resolves one.
 
 ## Schema
 
@@ -142,10 +146,9 @@ The workflow checks:
 
 - The published assets match the SHA-256 digests and byte sizes in `brand.manifest.json`.
 - `index.html` and `404.html` reference every published asset and contain no unresolved placeholder.
-- `status.json` parses, uses schema version 1, and has valid overall, component, and incident statuses.
-- `components` is a non-empty list with unique ids and both language labels.
-- `generated_at` and `expires_at` are null or valid UTC ISO 8601 timestamps.
-- Every incident has the required fields.
+- `status.json` passes `scripts/validate_status.py`: schema version 1, valid statuses, unique ids, both languages, UTC `Z` timestamps, paired `generated_at`/`expires_at`, and a lifetime of at most 15 minutes.
+- Every incident has the required fields and `updated_at` is not before `started_at`.
+- The same validator runs in `publish.yml` before a signed heartbeat is committed.
 - `CNAME` is exactly `status.ia.sbktechno.com` with a final newline.
 - `index.html`, `styles.css`, and `app.js` exist and are non-empty.
 
