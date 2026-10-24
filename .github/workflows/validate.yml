@@ -206,8 +206,8 @@ jobs:
           cname_path = Path("CNAME")
           if not cname_path.is_file():
               error("CNAME is missing")
-          elif cname_path.read_bytes() != b"status.sbktechno.com\n":
-              error("CNAME must contain exactly 'status.sbktechno.com' with a final newline")
+          elif cname_path.read_bytes() != b"status.ia.sbktechno.com\n":
+              error("CNAME must contain exactly 'status.ia.sbktechno.com' with a final newline")
 
           if not Path(".nojekyll").is_file():
               error(".nojekyll is missing")

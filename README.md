@@ -1,10 +1,10 @@
 # SBK Techno status page
 
-Public, static service status page for `status.sbktechno.com`, hosted on GitHub Pages.
+Public, static service status page for `status.ia.sbktechno.com`, hosted on GitHub Pages.
 
 ## What this site is
 
-- A static GitHub Pages site intended for `https://status.sbktechno.com`, served from the repository root.
+- A static GitHub Pages site intended for `https://status.ia.sbktechno.com`, served from the repository root.
 - Plain HTML, CSS, and JavaScript with no build step and no external runtime dependency: no framework, third-party font, remote image, analytics, or cookie.
 - The platform host will publish `status.json` at the site root. The publisher is pending; until it exists, the committed seed reports a stale signal. This page reads only that public file. It never calls the private platform, the portal, or the AI gateway.
 - If the platform host is down, GitHub Pages still serves the page, its assets, and the last published `status.json`. The page shows `unknown` and a stale signal notice when the heartbeat is missing or expired.
@@ -31,10 +31,10 @@ The platform command `cmd/brandlint` is the design gate for every SBK-operated s
 ## Hosting and DNS
 
 - GitHub Pages origin: `sbk-techno.github.io`.
-- The custom domain CNAME target is `sbk-techno.github.io`. Create a DNS CNAME record for `status` that points to `sbk-techno.github.io`.
-- The `CNAME` file in this repository contains `status.sbktechno.com` followed by one newline. GitHub Pages uses it to serve the custom domain.
+- The custom domain CNAME target is `sbk-techno.github.io`. Create a DNS CNAME record for `status.ia` that points to `sbk-techno.github.io`.
+- The `CNAME` file in this repository contains `status.ia.sbktechno.com` followed by one newline. GitHub Pages uses it to serve the custom domain.
 - `.nojekyll` disables Jekyll processing. GitHub Pages serves the committed output as-is; the generator runs before push, not on Pages. Pages is configured to deploy from the `main` branch root.
-- The custom domain is not live yet: the `status` CNAME still has to be created in the DNS zone. Until then, Pages has no valid certificate for `status.sbktechno.com`.
+- The custom domain is not live yet: the `status.ia` CNAME still has to be created in the DNS zone. Until then, Pages has no valid certificate for `status.ia.sbktechno.com`.
 - `404.html` is served by GitHub Pages for unknown paths. Its links use absolute paths because a 404 response can appear at any URL.
 - Enable HTTPS for the custom domain in the repository's Pages settings.
 
@@ -146,7 +146,7 @@ The workflow checks:
 - `components` is a non-empty list with unique ids and both language labels.
 - `generated_at` and `expires_at` are null or valid UTC ISO 8601 timestamps.
 - Every incident has the required fields.
-- `CNAME` is exactly `status.sbktechno.com` with a final newline.
+- `CNAME` is exactly `status.ia.sbktechno.com` with a final newline.
 - `index.html`, `styles.css`, and `app.js` exist and are non-empty.
 
 `make validate` runs the JSON parse and delegates to the platform generator check locally. The status workflow verifies the manifest and assets without a platform checkout; the platform `cmd/brandlint` scan is the canonical design gate and also scans this sibling checkout when present.
