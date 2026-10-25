@@ -1,6 +1,8 @@
 "use strict";
 
 (() => {
+  document.documentElement.classList.remove("no-js");
+
   const LANG_KEY = "sbk.status.lang";
   const STATUS_URL = "status.json";
   const REFRESH_MS = 60_000;
@@ -36,8 +38,6 @@
       lastUpdate: "Dernière mise à jour",
       componentsTitle: "Composantes",
       incidentsTitle: "Incidents",
-      loadingSummary: "Lecture du dernier signal publié.",
-      errorSummary: "L'état du service est momentanément indisponible.",
       unconfirmedSummary: "L'état du service n'est pas confirmé.",
       never: "Jamais",
       unavailable: "Indisponible",
@@ -50,14 +50,13 @@
       errorText:
         "Le fichier status.json n'a pas pu être chargé. Vérifiez votre connexion, puis réessayez. Les dernières données reçues restent affichées lorsqu'elles existent.",
       retry: "Réessayer",
-      loadingComponents: "Chargement des composantes…",
-      loadingIncidents: "Chargement des incidents…",
-      loadFailedComponents: "Les composantes n'ont pas pu être chargées.",
-      loadFailedIncidents: "Les incidents n'ont pas pu être chargés.",
       noComponents: "Aucune composante déclarée.",
       noIncidents: "Aucun incident déclaré.",
       untitledIncident: "Incident sans titre",
       staleFlag: "Signal périmé",
+      componentSnapshot: "Instantané",
+      componentChecked: "Vérifié",
+      componentObserved: "État au",
       incidentStarted: "Début",
       incidentUpdated: "Mis à jour",
       checkedLabel: "Dernière vérification",
@@ -84,8 +83,6 @@
       lastUpdate: "Last updated",
       componentsTitle: "Components",
       incidentsTitle: "Incidents",
-      loadingSummary: "Reading the latest published signal.",
-      errorSummary: "Service status is temporarily unavailable.",
       unconfirmedSummary: "Service status is unconfirmed.",
       never: "Never",
       unavailable: "Unavailable",
@@ -98,14 +95,13 @@
       errorText:
         "The status.json file could not be loaded. Check your connection and try again. The last received data remains visible when available.",
       retry: "Try again",
-      loadingComponents: "Loading components…",
-      loadingIncidents: "Loading incidents…",
-      loadFailedComponents: "Components could not be loaded.",
-      loadFailedIncidents: "Incidents could not be loaded.",
       noComponents: "No components declared.",
       noIncidents: "No declared incidents.",
       untitledIncident: "Untitled incident",
       staleFlag: "Stale signal",
+      componentSnapshot: "Snapshot",
+      componentChecked: "Checked",
+      componentObserved: "State at",
       incidentStarted: "Started",
       incidentUpdated: "Updated",
       checkedLabel: "Last checked",
@@ -345,6 +341,7 @@
     if (els.metaDescription) {
       els.metaDescription.setAttribute("content", t("metaDescription"));
     }
+    document.title = t("docTitle");
     els.html.lang = state.lang === "fr" ? "fr-CA" : "en-CA";
     for (const button of els.langButtons) {
       button.setAttribute("aria-pressed", String(button.dataset.lang === state.lang));
@@ -440,6 +437,8 @@
 
   function renderComponents(payload, stale) {
     els.componentsList.replaceChildren();
+    const generated = parseTimestamp(payload.generated_at);
+    const checked = state.lastChecked;
     let rendered = 0;
 
     for (const component of payload.components) {
@@ -470,6 +469,20 @@
       const side = document.createElement("div");
       side.className = "component-side";
       side.append(makePill(status, STATUS_LABELS[state.lang][status]));
+
+      const meta = document.createElement("p");
+      meta.className = "component-meta";
+      const metaLabel = document.createElement("span");
+      metaLabel.className = "label";
+      metaLabel.textContent = t(generated !== null ? "componentObserved" : "componentChecked");
+      meta.append(metaLabel, document.createTextNode(" "));
+      const stamp = generated !== null ? generated : checked;
+      if (stamp !== null) {
+        meta.append(createTime(stamp));
+      } else {
+        meta.append(document.createTextNode(t("never")));
+      }
+      side.append(meta);
 
       if (stale) {
         const flag = document.createElement("span");
@@ -558,28 +571,6 @@
     }
   }
 
-  function renderPlaceholder() {
-    els.hero.setAttribute("data-status", "unknown");
-    els.heroIcon.setAttribute("href", "#icon-unknown");
-    setText(els.heroStatus, OVERALL_LABELS[state.lang].unknown);
-    setText(els.summary, state.hasError ? t("errorSummary") : t("loadingSummary"));
-    renderUpdated(els.heroUpdated, null, state.hasError ? "unavailable" : "never");
-
-    els.componentsList.replaceChildren();
-    els.componentsEmpty.hidden = false;
-    setText(
-      els.componentsEmpty,
-      state.hasError ? t("loadFailedComponents") : t("loadingComponents"),
-    );
-
-    els.incidentsList.replaceChildren();
-    els.incidentsEmpty.hidden = false;
-    setText(
-      els.incidentsEmpty,
-      state.hasError ? t("loadFailedIncidents") : t("loadingIncidents"),
-    );
-  }
-
   function renderChecked() {
     els.checked.replaceChildren();
     if (state.lastChecked === null) {
@@ -601,8 +592,6 @@
       renderHero(state.data, freshness);
       renderComponents(state.data, state.stale);
       renderIncidents(state.data);
-    } else {
-      renderPlaceholder();
     }
 
     renderChecked();
@@ -703,7 +692,8 @@
   function init() {
     if (!els.hero) return;
     bind();
-    renderAll();
+    applyStaticTranslations();
+    renderChecked();
     if (!document.hidden) startPolling();
     refresh();
   }

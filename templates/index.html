@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="fr-CA">
+<html lang="fr-CA" class="no-js">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#F7F5EF">
@@ -63,7 +63,7 @@
     </div>
   </header>
 
-  <main id="contenu" class="sbk-shell">
+  <main id="contenu" class="sbk-shell" tabindex="-1">
     <section class="page-head" aria-labelledby="page-title">
       <p class="eyebrow" data-i18n="pageKicker">Information publique</p>
       <h1 class="page-title" id="page-title" data-i18n="pageTitle">État du service</h1>
@@ -77,7 +77,9 @@
 
     <noscript>
       <p class="alert alert-noscript">
-        Cette page a besoin de JavaScript pour lire le fichier d'état public. Le fichier reste accessible à l'adresse <a href="status.json">status.json</a>.
+        <strong>Instantané statique.</strong> Le contenu ci-dessous a été produit le
+        <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time>.
+        La donnée publiée en direct se trouve dans <a href="status.json">status.json</a>.
       </p>
     </noscript>
 
@@ -104,7 +106,7 @@
       <div class="hero-body">
         <p class="hero-kicker" data-i18n="overallEyebrow">État général</p>
         <h2 class="hero-status" id="hero-status"><span id="hero-status-text">État inconnu</span></h2>
-        <p class="hero-summary" id="overall-summary" aria-live="polite" aria-atomic="true">Lecture du dernier signal publié.</p>
+        <p class="hero-summary" id="overall-summary" aria-live="polite" aria-atomic="true">Aucun signal de vie reçu. L'état du service n'est pas confirmé.</p>
         <p class="hero-updated">
           <span data-i18n="lastUpdate">Dernière mise à jour</span>
           <span class="dot" aria-hidden="true"></span>
@@ -118,8 +120,65 @@
         <span class="section-index" aria-hidden="true">01</span>
         <h2 class="section-title" id="components-title"><span data-i18n="componentsTitle">Composantes</span></h2>
       </header>
-      <ul class="components" id="components-list"></ul>
-      <p class="quiet" id="components-empty">Chargement des composantes…</p>
+      <!-- Static snapshot of status.json; app.js replaces it with the live document. -->
+      <ul class="components" id="components-list">
+        <li class="component">
+          <div class="component-main">
+            <h3 class="component-name">Portail</h3>
+            <p class="component-detail">Aucun signal de vie reçu pour le portail.</p>
+          </div>
+          <div class="component-side">
+            <span class="pill" data-status="unknown">Inconnu</span>
+            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
+            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
+          </div>
+        </li>
+        <li class="component">
+          <div class="component-main">
+            <h3 class="component-name">Documentation</h3>
+            <p class="component-detail">Aucun signal de vie reçu pour la documentation.</p>
+          </div>
+          <div class="component-side">
+            <span class="pill" data-status="unknown">Inconnu</span>
+            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
+            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
+          </div>
+        </li>
+        <li class="component">
+          <div class="component-main">
+            <h3 class="component-name">Applications clients</h3>
+            <p class="component-detail">Aucun signal de vie reçu pour les applications clients.</p>
+          </div>
+          <div class="component-side">
+            <span class="pill" data-status="unknown">Inconnu</span>
+            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
+            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
+          </div>
+        </li>
+        <li class="component">
+          <div class="component-main">
+            <h3 class="component-name">Passerelle IA</h3>
+            <p class="component-detail">Aucun signal de vie reçu pour la passerelle IA.</p>
+          </div>
+          <div class="component-side">
+            <span class="pill" data-status="unknown">Inconnu</span>
+            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
+            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
+          </div>
+        </li>
+        <li class="component">
+          <div class="component-main">
+            <h3 class="component-name">Page d'état</h3>
+            <p class="component-detail">Aucun signal de vie reçu pour la page d'état.</p>
+          </div>
+          <div class="component-side">
+            <span class="pill" data-status="unknown">Inconnu</span>
+            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
+            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
+          </div>
+        </li>
+      </ul>
+      <p class="quiet" id="components-empty" hidden>Aucune composante déclarée.</p>
     </section>
 
     <section class="section" aria-labelledby="incidents-title">
@@ -128,7 +187,7 @@
         <h2 class="section-title" id="incidents-title"><span data-i18n="incidentsTitle">Incidents</span></h2>
       </header>
       <ol class="incidents" id="incidents-list"></ol>
-      <p class="quiet" id="incidents-empty">Chargement des incidents…</p>
+      <p class="quiet" id="incidents-empty">Aucun incident déclaré.</p>
     </section>
   </main>
 
@@ -144,7 +203,7 @@
       </div>
       <div class="footer-meta">
         <p><span data-i18n="checkedLabel">Dernière vérification</span> <span class="dot" aria-hidden="true"></span> <span id="checked-value">Pas encore vérifié</span></p>
-        <p data-i18n="refreshNote">Actualisation automatique toutes les 60 secondes.</p>
+        <p class="refresh-note" data-i18n="refreshNote">Actualisation automatique toutes les 60 secondes.</p>
         <p><span data-i18n="footerSource">Fichier publié</span> <span class="dot" aria-hidden="true"></span> <a href="status.json">status.json</a></p>
         <p><span>status.ia.sbktechno.com</span> <span class="dot" aria-hidden="true"></span> <span data-i18n="footerHost">Hébergé sur GitHub Pages</span></p>
       </div>
