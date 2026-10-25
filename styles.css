@@ -1144,9 +1144,11 @@ main:focus-visible {
   display: none;
 }
 
-/* The vitals instrument is derived from status.json; without JavaScript it
-   would show a placeholder count, so it stays out of the honest no-JS view. */
-.no-js .vitals {
+/* The vitals instrument and the check time are derived from status.json;
+   without JavaScript they would show placeholders, so they stay out of the
+   honest no-JS view. */
+.no-js .vitals,
+.no-js .hero__check {
   display: none;
 }
 
