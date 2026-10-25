@@ -90,7 +90,6 @@
         confirmed: false,
         forceUnknown: true,
         showData: false,
-        showComponents: false,
         showVitals: false,
         showStaleBanner: false,
         snapshot: "unknown",
@@ -108,7 +107,6 @@
         confirmed: false,
         forceUnknown: true,
         showData: false,
-        showComponents: false,
         showVitals: false,
         showStaleBanner: false,
         snapshot: "unknown",
@@ -128,7 +126,6 @@
       confirmed,
       forceUnknown: !confirmed,
       showData: true,
-      showComponents: true,
       showVitals: true,
       showStaleBanner: state.stale,
       snapshot:

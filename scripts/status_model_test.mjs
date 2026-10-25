@@ -76,7 +76,6 @@ for (const [name, generated] of [
   assertUnconfirmed(current, "future");
   assert.equal(current.snapshot, "unknown");
   assert.equal(current.showVitals, true);
-  assert.equal(current.showComponents, true);
 }
 
 // Exactly five minutes ahead is tolerated; one second more is not.
@@ -103,7 +102,6 @@ for (const [name, generated] of [
   assert.equal(current.snapshot, "generated");
   assert.equal(current.generated, Date.parse("2026-10-25T11:40:00Z"));
   assert.equal(current.showVitals, true);
-  assert.equal(current.showComponents, true);
 }
 
 // A heartbeat older than the 15-minute budget is aged even if a malformed
@@ -128,7 +126,6 @@ for (const [name, generated] of [
   assert.equal(failed.confirmed, false);
   assert.equal(failed.forceUnknown, true);
   assert.equal(failed.showData, false);
-  assert.equal(failed.showComponents, false);
   assert.equal(failed.showVitals, false);
   assert.equal(failed.showStaleBanner, false);
   assert.equal(failed.signal, "unknown");
