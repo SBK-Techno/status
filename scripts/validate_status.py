@@ -59,6 +59,17 @@ SVG_TAG = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
 SVG_DIMENSION = re.compile(r'\b(width|height)="([0-9]+(?:\.[0-9]+)?)"')
 SVG_FILL = re.compile(r'fill="(#[0-9A-Fa-f]{6})"', re.IGNORECASE)
 CSS_BLOCK = re.compile(r"(?s)([^{}]+)\{([^{}]*)\}")
+HARDCODED_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+STORAGE_PATTERNS = (
+    (re.compile(r"\blocalStorage\b"), "localStorage"),
+    (re.compile(r"\bsessionStorage\b"), "sessionStorage"),
+    (re.compile(r"\bdocument\s*\.\s*cookie\b"), "document.cookie"),
+    (re.compile(r"\bindexedDB\b", re.IGNORECASE), "IndexedDB"),
+    (re.compile(r"\bcaches\s*\."), "Cache Storage"),
+    (re.compile(r"\bserviceWorker\b"), "service workers"),
+    (re.compile(r"\bsendBeacon\b"), "beacons"),
+    (re.compile(r"\bSet-Cookie\b", re.IGNORECASE), "Set-Cookie"),
+)
 FRENCH_LANG = re.compile(r"^fr(?:-[A-Za-z0-9]{1,8})*$")
 EVENT_HANDLER = re.compile(r"^on[a-z]+$")
 CSS_URL = re.compile(r"url\(\s*(['\"]?)([^'\")]+)\1\s*\)", re.IGNORECASE)
@@ -441,6 +452,71 @@ def local_site_path(href: str) -> str | None:
     return path or None
 
 
+def validate_no_storage(sources: dict[str, str]) -> list[str]:
+    """Reject every browser storage, cookie, worker, and beacon API."""
+    errors: list[str] = []
+    for name, text in sources.items():
+        for pattern, label in STORAGE_PATTERNS:
+            if pattern.search(text):
+                errors.append(
+                    f"{name}: {label} is not allowed by the public no-storage contract"
+                )
+    return errors
+
+
+def validate_no_js_snapshot(name: str, text: str) -> list[str]:
+    """The static page must not present a status or time it cannot have read."""
+    errors: list[str] = []
+    page = parse_page(text)
+    if next(page.find_all("time"), None) is not None:
+        errors.append(
+            f"{name}: the static snapshot must not hard-code <time> elements; "
+            "times come from status.json only after JavaScript reads it"
+        )
+    if HARDCODED_TIMESTAMP.search(text):
+        errors.append(
+            f"{name}: the static snapshot must not hard-code a timestamp"
+        )
+
+    status_word = next(page.find_all(element_id="hero-status-text"), None)
+    if status_word is not None:
+        word = status_word.text().strip().lower()
+        if "non disponible" not in word and "non rendu" not in word:
+            errors.append(
+                f"{name}: the no-JS hero must say the snapshot is not rendered, "
+                "not present a status word"
+            )
+
+    summary = next(page.find_all(element_id="overall-summary"), None)
+    if summary is not None and "javascript" not in summary.text().lower():
+        errors.append(
+            f"{name}: the no-JS summary must say the published data is not "
+            "rendered without JavaScript"
+        )
+
+    components = next(page.find_all("ul", element_id="components-list"), None)
+    rows = [
+        child
+        for child in (components.children if components is not None else [])
+        if isinstance(child, Element) and child.tag == "li"
+    ]
+    for index, row in enumerate(rows, 1):
+        detail = next(row.find_all("p", class_name="component-detail"), None)
+        if detail is not None and "javascript" not in detail.text().lower():
+            errors.append(
+                f"{name}: component row {index} must say its state is not "
+                "rendered without JavaScript"
+            )
+
+    incidents = next(page.find_all(element_id="incidents-empty"), None)
+    if incidents is not None and "javascript" not in incidents.text().lower():
+        errors.append(
+            f"{name}: the no-JS incident note must say incidents are not "
+            "rendered without JavaScript"
+        )
+    return errors
+
+
 def validate_page(
     name: str,
     text: str,
@@ -692,8 +768,11 @@ def validate_page(
                         f"{name}: component row {index} has invalid status "
                         f"{pill.attrs.get('data-status')!r}"
                     )
-                if next(row.find_all("time"), None) is None:
-                    errors.append(f"{name}: component row {index} needs a <time> timestamp")
+                meta = next(row.find_all("p", class_name="component-meta"), None)
+                if meta is None or not meta.text().strip():
+                    errors.append(
+                        f"{name}: component row {index} needs a snapshot note"
+                    )
 
         component_count = next(root.find_all(element_id="components-count"), None)
         if component_count is None or not component_count.text().strip():
@@ -1107,12 +1186,18 @@ def validate_site(root: Path) -> list[str]:
         )
         errors.extend(validate_manifest_assets(root, manifest, pages, stylesheets))
 
-    for name, text in list(pages.items()) + list(stylesheets.items()):
-        if "document.cookie" in text or "Set-Cookie" in text:
-            errors.append(f"{name}: cookies are not part of the status contract")
-    app = root / "app.js"
-    if app.is_file() and "document.cookie" in app.read_text(encoding="utf-8"):
-        errors.append("app.js: cookies are not part of the status contract")
+    if "index.html" in pages:
+        errors.extend(validate_no_js_snapshot("index.html", pages["index.html"]))
+    sources: dict[str, str] = dict(pages)
+    sources.update(stylesheets)
+    for name in ("app.js", "templates/index.html", "templates/404.html"):
+        path = root / name
+        if path.is_file():
+            try:
+                sources[name] = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                errors.append(f"{name}: cannot be read: {exc}")
+    errors.extend(validate_no_storage(sources))
     return errors
 
 

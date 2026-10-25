@@ -53,7 +53,7 @@ def valid_page() -> str:
 <h3>Portail</h3>
 <p class="component-detail">Aucun signal de vie reçu pour le portail.</p>
 <span class="pill" data-status="unknown">Inconnu</span>
-<time datetime="2026-10-25T13:42:57Z">25 octobre 2026 à 13 h 42 UTC</time>
+<p class="component-meta"><time datetime="2026-10-25T13:42:57Z">25 octobre 2026 à 13 h 42 UTC</time></p>
 </li>
 </ul>
 <p id="components-empty" hidden>Aucune composante déclarée.</p>
@@ -284,13 +284,13 @@ class ValidateStatusTest(unittest.TestCase):
                 ),
                 "javascript: URL",
             ),
-            "component without time": (
+            "component without snapshot note": (
                 lambda p: p.replace(
-                    '<time datetime="2026-10-25T13:42:57Z">25 octobre 2026 à 13 h 42 UTC</time>',
+                    '<p class="component-meta"><time datetime="2026-10-25T13:42:57Z">25 octobre 2026 à 13 h 42 UTC</time></p>',
                     "",
                     1,
                 ),
-                "component row 1 needs a <time>",
+                "component row 1 needs a snapshot note",
             ),
             "component without name": (
                 lambda p: p.replace("<h3>Portail</h3>", "", 1),
@@ -590,7 +590,7 @@ class ValidateStatusTest(unittest.TestCase):
             (root / "404.html").write_text(valid_page(), encoding="utf-8")
 
             errors = VALIDATOR.validate_site(root)
-            self.assertIn("cookies are not part of the status contract", " | ".join(errors))
+            self.assertIn("document.cookie is not allowed", " | ".join(errors))
 
     def test_rejects_unreferenced_published_asset(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -614,6 +614,84 @@ class ValidateStatusTest(unittest.TestCase):
         self.assertAlmostEqual(
             VALIDATOR.contrast_ratio("#EDF1F7", "#080A0F"), 17.47, places=2
         )
+
+    def test_rejects_forbidden_storage_apis(self) -> None:
+        cases = {
+            "localStorage": 'window.localStorage.setItem("x", "y");',
+            "sessionStorage": 'window.sessionStorage.getItem("x");',
+            "document.cookie": 'document.cookie = "x=1";',
+            "IndexedDB": 'window.indexedDB.open("x");',
+            "Cache Storage": 'caches.open("x");',
+            "service workers": 'navigator.serviceWorker.register("x.js");',
+            "beacons": 'navigator.sendBeacon("/x");',
+        }
+        for label, source in cases.items():
+            with self.subTest(api=label):
+                errors = VALIDATOR.validate_no_storage({"app.js": source})
+                self.assertIn(label, " | ".join(errors))
+
+    def test_repository_has_no_storage_apis(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        sources = {
+            name: (root / name).read_text(encoding="utf-8")
+            for name in (
+                "index.html",
+                "404.html",
+                "app.js",
+                "styles.css",
+                "templates/index.html",
+                "templates/404.html",
+            )
+        }
+        self.assertEqual(VALIDATOR.validate_no_storage(sources), [])
+
+    def test_no_js_snapshot_is_honest_for_operational_and_null_heartbeat(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        text = (root / "index.html").read_text(encoding="utf-8")
+        operational = valid_document()
+        operational.update(
+            overall="operational",
+            summary_fr="Tout va bien.",
+            summary_en="All good.",
+            generated_at="2026-10-24T12:00:00Z",
+            expires_at="2026-10-24T12:05:00Z",
+        )
+        null_heartbeat = valid_document()
+        null_heartbeat.update(
+            generated_at=None,
+            expires_at=None,
+            overall="unknown",
+            summary_fr="Aucun signal de vie reçu.",
+            summary_en="No heartbeat received.",
+        )
+        for name, document in {
+            "operational": operational,
+            "null heartbeat": null_heartbeat,
+        }.items():
+            with self.subTest(fixture=name):
+                self.assertEqual(
+                    VALIDATOR.validate_no_js_snapshot("index.html", text), []
+                )
+                self.assertNotIn(document["summary_fr"], text)
+                if document["generated_at"] is not None:
+                    self.assertNotIn(document["generated_at"], text)
+                self.assertIn("non rendu", text.lower())
+
+    def test_no_js_snapshot_rejects_a_hardcoded_status_or_time(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        text = (root / "index.html").read_text(encoding="utf-8")
+        broken = text.replace(
+            '<span id="hero-status-text">non disponible</span>',
+            '<span id="hero-status-text">opérationnel</span>',
+            1,
+        ).replace(
+            "</body>",
+            '<time datetime="2026-10-25T13:56:03Z">25 octobre 2026</time></body>',
+            1,
+        )
+        errors = " | ".join(VALIDATOR.validate_no_js_snapshot("index.html", broken))
+        self.assertIn("must not hard-code <time>", errors)
+        self.assertIn("must say the snapshot is not rendered", errors)
 
     def test_pages_allow_self_hosted_fonts(self) -> None:
         root = Path(__file__).resolve().parent.parent
