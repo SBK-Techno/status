@@ -1,12 +1,14 @@
 "use strict";
 
 (() => {
+  const model = window.StatusModel;
+  if (!model) return;
+
   document.documentElement.classList.remove("no-js");
 
   const STATUS_URL = "status.json";
   const REFRESH_MS = 60_000;
   const FETCH_TIMEOUT_MS = 15_000;
-  const MAX_AGE_MS = 15 * 60_000;
 
   const STATUSES = [
     "operational",
@@ -35,7 +37,8 @@
       aboutLabel: "À propos",
       overallEyebrow: "État général",
       overallLead: "L'état du service est",
-      staticSummary: "Lecture de l'état publié dans status.json.",
+      loadingSummary: "Lecture de l'état publié dans status.json.",
+      notDisplayed: "L'état publié n'est pas affiché.",
       unconfirmedSummary: "L'état du service n'est pas confirmé.",
       componentsTitle: "Composantes",
       incidentsTitle: "Incidents",
@@ -48,28 +51,32 @@
       vitalMaintenance: "Maintenance",
       vitalUnknown: "Inconnues",
       vitalSignals: "Signaux reçus",
-      heroChecked: "Vérifié",
+      heroChecked: "Dernière lecture",
       sourceLabel: "Source",
       footerProduct: "Exploité par SBK Techno",
       footerSnapshot: "Instantané",
       footerSource: "Fichier publié",
-      never: "Jamais",
+      noReading: "Aucune",
+      noSnapshot: "Aucun",
       unavailable: "Indisponible",
+      unknown: "Inconnu",
       staleTitle: "Signal périmé",
+      staleFutureTitle: "Horodatage incohérent",
       staleNever:
-        "Aucun signal de vie n'a encore été reçu. L'état général est présenté comme inconnu et les composantes restent non confirmées.",
+        "Aucun signal de vie n'a encore été reçu. L'état général et les composantes sont présentés comme inconnus.",
       staleAged:
         "Le dernier signal de vie n'est plus valide. L'état général est présenté comme inconnu et les états des composantes peuvent être périmés.",
+      staleFuture:
+        "L'horodatage publié est dans le futur. L'état général et les composantes sont présentés comme inconnus.",
       errorTitle: "Impossible de lire l'état du service",
       errorText:
-        "Le fichier status.json n'a pas pu être chargé. Vérifiez votre connexion, puis réessayez. Les dernières données reçues restent affichées lorsqu'elles existent.",
+        "Le fichier status.json n'a pas pu être chargé. Vérifiez votre connexion, puis réessayez.",
       retry: "Réessayer",
       noComponents: "Aucune composante déclarée.",
       noIncidents: "Aucun incident déclaré. Le journal est vide pour cet instantané.",
       untitledIncident: "Incident sans titre",
-      componentSnapshot: "Instantané",
-      componentChecked: "Vérifié",
       componentObserved: "État au",
+      componentUnconfirmed: "Non confirmé",
       incidentStarted: "Début",
       incidentUpdated: "Mis à jour",
     },
@@ -87,7 +94,8 @@
       aboutLabel: "About",
       overallEyebrow: "Overall status",
       overallLead: "Service status is",
-      staticSummary: "Reading the published status from status.json.",
+      loadingSummary: "Reading the published status from status.json.",
+      notDisplayed: "The published status is not displayed.",
       unconfirmedSummary: "Service status is unconfirmed.",
       componentsTitle: "Components",
       incidentsTitle: "Incidents",
@@ -100,28 +108,32 @@
       vitalMaintenance: "Maintenance",
       vitalUnknown: "Unknown",
       vitalSignals: "Signals received",
-      heroChecked: "Checked",
+      heroChecked: "Last read",
       sourceLabel: "Source",
       footerProduct: "Operated by SBK Techno",
       footerSnapshot: "Snapshot",
       footerSource: "Published file",
-      never: "Never",
+      noReading: "None",
+      noSnapshot: "None",
       unavailable: "Unavailable",
+      unknown: "Unknown",
       staleTitle: "Stale signal",
+      staleFutureTitle: "Inconsistent timestamp",
       staleNever:
-        "No heartbeat has been received yet. The overall state is shown as unknown and the components remain unconfirmed.",
+        "No heartbeat has been received yet. The overall state and the components are shown as unknown.",
       staleAged:
         "The last heartbeat is no longer valid. The overall state is shown as unknown, and component states may be stale.",
+      staleFuture:
+        "The published timestamp is in the future. The overall state and the components are shown as unknown.",
       errorTitle: "Unable to read the service status",
       errorText:
-        "The status.json file could not be loaded. Check your connection and try again. The last received data remains visible when available.",
+        "The status.json file could not be loaded. Check your connection and try again.",
       retry: "Try again",
       noComponents: "No components declared.",
       noIncidents: "No declared incidents. The journal is empty for this snapshot.",
       untitledIncident: "Untitled incident",
-      componentSnapshot: "Snapshot",
-      componentChecked: "Checked",
       componentObserved: "State at",
+      componentUnconfirmed: "Unconfirmed",
       incidentStarted: "Started",
       incidentUpdated: "Updated",
     },
@@ -201,6 +213,7 @@
     heroChecked: document.getElementById("hero-checked"),
     snapshotTime: document.getElementById("snapshot-time"),
     staleBanner: document.getElementById("stale-banner"),
+    staleTitle: document.getElementById("stale-title"),
     staleText: document.getElementById("stale-text"),
     errorBanner: document.getElementById("fetch-error"),
     retry: document.getElementById("retry-button"),
@@ -256,12 +269,6 @@
     if (nonEmpty(primary)) return primary;
     if (nonEmpty(fallback)) return fallback;
     return "";
-  }
-
-  function parseTimestamp(value) {
-    if (typeof value !== "string" || value.trim() === "") return null;
-    const ms = Date.parse(value);
-    return Number.isFinite(ms) ? ms : null;
   }
 
   function isoStamp(ms) {
@@ -322,20 +329,7 @@
   }
 
   function getFreshness(payload) {
-    const now = Date.now();
-    const generated = parseTimestamp(payload.generated_at);
-    const expires = parseTimestamp(payload.expires_at);
-
-    if (generated === null) {
-      return { stale: true, reason: "never", generated: null };
-    }
-    if (expires !== null && expires <= now) {
-      return { stale: true, reason: "expired", generated };
-    }
-    if (now - generated > MAX_AGE_MS) {
-      return { stale: true, reason: "aged", generated };
-    }
-    return { stale: false, reason: "fresh", generated };
+    return model.freshness(payload, Date.now());
   }
 
   function assertPayload(payload) {
@@ -353,7 +347,8 @@
     }
     for (const field of ["generated_at", "expires_at"]) {
       const value = payload[field];
-      if (value !== null && value !== undefined && parseTimestamp(value) === null) {
+      if (value === null || value === undefined || value === "") continue;
+      if (typeof value !== "string" || model.parseTimestamp(value) === null) {
         throw new TypeError("Invalid " + field);
       }
     }
@@ -377,31 +372,54 @@
       els.staleBanner.hidden = true;
       return;
     }
-    setText(
-      els.staleText,
-      freshness.reason === "never" ? t("staleNever") : t("staleAged"),
-    );
+    const future = freshness.reason === "future";
+    setText(els.staleTitle, t(future ? "staleFutureTitle" : "staleTitle"));
+    let text = "staleAged";
+    if (freshness.reason === "never") text = "staleNever";
+    else if (future) text = "staleFuture";
+    setText(els.staleText, t(text));
     els.staleBanner.hidden = false;
   }
 
-  function renderStaticState() {
+  function renderUnavailable(hasError) {
     els.hero.setAttribute("data-status", "unknown");
     setText(els.heroStatus, OVERALL_WORDS[state.lang].unknown);
-    setText(els.summary, t("staticSummary"));
+    setText(els.summary, t(hasError ? "notDisplayed" : "loadingSummary"));
+    setText(els.heroChecked, t("unknown"));
+    setText(els.snapshotTime, t("unknown"));
+    setText(els.componentsCount, t("notDisplayed"));
+    setText(els.incidentsCount, t("notDisplayed"));
+    els.componentsList.replaceChildren();
+    els.incidentsList.replaceChildren();
+    els.componentsEmpty.hidden = false;
+    setText(els.componentsEmpty, t("notDisplayed"));
+    els.incidentsEmpty.hidden = false;
+    setText(els.incidentsEmpty, t("notDisplayed"));
+    els.vitals.hidden = true;
   }
 
   function renderHero(payload, freshness) {
     const status = freshness.stale ? "unknown" : normalizeStatus(payload.overall);
     els.hero.setAttribute("data-status", status);
     setText(els.heroStatus, OVERALL_WORDS[state.lang][status]);
-    setText(els.summary, pick(payload, "summary") || t("unconfirmedSummary"));
+    setText(
+      els.summary,
+      model.forcesUnknown(freshness)
+        ? t("unconfirmedSummary")
+        : pick(payload, "summary") || t("unconfirmedSummary"),
+    );
   }
 
-  function renderSnapshot(payload) {
+  function renderSnapshot(payload, freshness) {
     if (!els.snapshotTime) return;
-    const generated = parseTimestamp(payload.generated_at);
-    if (generated === null) return;
-    setStamp(els.snapshotTime, generated);
+    if (!model.hasValidHeartbeat(freshness)) {
+      setText(
+        els.snapshotTime,
+        freshness.reason === "never" ? t("noSnapshot") : t("unknown"),
+      );
+      return;
+    }
+    setStamp(els.snapshotTime, freshness.generated);
   }
 
   function updateVitals(total, counts) {
@@ -438,10 +456,10 @@
     setText(els.vitalsSignalTotal, String(total));
   }
 
-  function renderComponents(payload) {
+  function renderComponents(payload, freshness) {
     els.componentsList.replaceChildren();
-    const generated = parseTimestamp(payload.generated_at);
-    const checked = state.lastChecked;
+    const generated = freshness.generated;
+    const forced = model.forcesUnknown(freshness);
     const counts = {
       operational: 0,
       degraded: 0,
@@ -453,7 +471,7 @@
 
     for (const component of payload.components) {
       if (!component || typeof component !== "object") continue;
-      const status = normalizeStatus(component.status);
+      const status = forced ? "unknown" : normalizeStatus(component.status);
       counts[vitalKey(status)] += 1;
       rendered += 1;
 
@@ -485,15 +503,14 @@
       meta.className = "component-meta";
       const metaLabel = document.createElement("span");
       metaLabel.className = "micro";
-      metaLabel.textContent = t(generated !== null ? "componentObserved" : "componentChecked");
       meta.append(metaLabel);
-      const stamp = generated !== null ? generated : checked;
-      if (stamp !== null) {
-        meta.append(createTime(stamp));
+      if (forced) {
+        // No usable heartbeat: the payload status is not a confirmed state,
+        // so no time is presented as a verification.
+        metaLabel.textContent = t("componentUnconfirmed");
       } else {
-        const missing = document.createElement("span");
-        missing.textContent = t("never");
-        meta.append(missing);
+        metaLabel.textContent = t("componentObserved");
+        meta.append(createTime(generated));
       }
       side.append(meta);
 
@@ -501,7 +518,7 @@
       els.componentsList.append(item);
     }
 
-    setText(els.componentsCount, pad2(rendered));
+    setText(els.componentsCount, `${pad2(rendered)} ${t("componentsTracked")}`);
     updateVitals(rendered, counts);
     els.componentsEmpty.hidden = rendered > 0;
     if (rendered === 0) setText(els.componentsEmpty, t("noComponents"));
@@ -514,7 +531,7 @@
     label.textContent = t(labelKey);
     wrap.append(label);
 
-    const ms = parseTimestamp(value);
+    const ms = model.parseTimestamp(value);
     if (ms === null) {
       const missing = document.createElement("span");
       missing.textContent = t("unavailable");
@@ -558,7 +575,7 @@
       startLabel.className = "micro";
       startLabel.textContent = t("incidentStarted");
       timeCol.append(startLabel);
-      const startMs = parseTimestamp(incident.started_at);
+      const startMs = model.parseTimestamp(incident.started_at);
       if (startMs !== null) {
         timeCol.append(createTime(startMs));
       } else {
@@ -606,13 +623,28 @@
     }
   }
 
-  function renderChecked() {
-    if (state.lastChecked === null) return;
+  function renderChecked(freshness) {
+    if (!state.data) {
+      setText(els.heroChecked, t("unknown"));
+      return;
+    }
+    if (!model.hasValidHeartbeat(freshness)) {
+      setText(
+        els.heroChecked,
+        freshness.reason === "never" ? t("noReading") : t("unknown"),
+      );
+      return;
+    }
+    if (state.lastChecked === null) {
+      setText(els.heroChecked, t("unavailable"));
+      return;
+    }
     setStamp(els.heroChecked, state.lastChecked);
   }
 
   function renderAll() {
     applyStaticTranslations();
+    const current = model.view(Boolean(state.data), state.hasError);
     const freshness = state.data ? getFreshness(state.data) : null;
 
     renderErrorBanner();
@@ -620,14 +652,15 @@
 
     if (state.data) {
       renderHero(state.data, freshness);
-      renderSnapshot(state.data);
-      renderComponents(state.data);
+      renderSnapshot(state.data, freshness);
+      renderComponents(state.data, freshness);
       renderIncidents(state.data);
+      els.vitals.hidden = !current.showVitals;
     } else {
-      renderStaticState();
+      renderUnavailable(state.hasError);
     }
 
-    renderChecked();
+    renderChecked(freshness);
   }
 
   async function refresh() {
@@ -653,12 +686,14 @@
       assertPayload(payload);
       state.data = payload;
       state.hasError = false;
+      // Only a successful read may move the check time. A failed attempt
+      // leaves the last successful read visible, or unknown before the first.
+      state.lastChecked = Date.now();
     } catch {
       state.hasError = true;
     } finally {
       if (timeoutId !== null) window.clearTimeout(timeoutId);
       state.fetching = false;
-      state.lastChecked = Date.now();
       if (els.retry) els.retry.disabled = false;
       renderAll();
     }
@@ -711,8 +746,7 @@
     if (!els.hero) return;
     bind();
     applyStaticTranslations();
-    renderStaticState();
-    renderChecked();
+    renderUnavailable(false);
     if (!document.hidden) startPolling();
     refresh();
   }

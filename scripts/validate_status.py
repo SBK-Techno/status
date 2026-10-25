@@ -8,6 +8,7 @@ seed, the published document, and the page cannot drift apart.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -27,6 +28,18 @@ STATUSES = {
 INCIDENT_STATUSES = {"investigating", "identified", "monitoring", "resolved"}
 TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 MAX_LIFETIME = timedelta(minutes=15)
+FUTURE_SKEW = timedelta(minutes=5)
+NO_JS_PHRASE = "l'état publié n'est pas affiché"
+HEADER_LOGO_TOKEN = "--sbk-logo-header"
+# WCAG 1.4.11 exempts logotypes. The brand-approved reverse lockup carries one
+# #2255BC mark that cannot reach 3:1 on any uniform surface that also keeps its
+# #FFFFFF wordmark legible, and the brand layer publishes no dark-surface
+# variant. The exemption is tied to the exact published file and fill and to
+# the measured ratio on the surface the stylesheet actually renders. A
+# recolour, a different surface, or a different asset fails until the brand
+# layer ships a variant and this record is replaced by a 3:1 threshold.
+HEADER_LOGOTYPE_FILL = "#2255BC"
+HEADER_LOGOTYPE_RATIO = 2.92
 TOP_LEVEL = {
     "version",
     "generated_at",
@@ -49,7 +62,7 @@ INCIDENT_FIELDS = {
     "summary_en",
 }
 CNAME = b"status.ia.sbktechno.com\n"
-REQUIRED_FILES = ("index.html", "404.html", "styles.css", "app.js")
+REQUIRED_FILES = ("index.html", "404.html", "styles.css", "app.js", "status-model.js")
 SITE_HOST = "status.ia.sbktechno.com"
 DARK_SELECTOR = ':root[data-theme="dark"]'
 BRAND_PROPERTY = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
@@ -111,7 +124,11 @@ def unknown_keys(value: dict, allowed: set[str], where: str) -> list[str]:
     return [f"{where} has unknown field {key!r}" for key in sorted(set(value) - allowed)]
 
 
-def validate_document(status: object) -> list[str]:
+def validate_document(
+    status: object,
+    *,
+    now: datetime | None = None,
+) -> list[str]:
     errors: list[str] = []
     if not isinstance(status, dict):
         return ["status document must be a JSON object"]
@@ -148,6 +165,11 @@ def validate_document(status: object) -> list[str]:
             errors.append("expires_at must be after generated_at")
         elif expires - generated > MAX_LIFETIME:
             errors.append("expires_at must be at most 15 minutes after generated_at")
+        instant = now or datetime.now(timezone.utc)
+        if generated - instant > FUTURE_SKEW:
+            errors.append(
+                "generated_at must not be more than 5 minutes in the future"
+            )
 
     components = status.get("components")
     if not isinstance(components, list) or not components:
@@ -174,6 +196,19 @@ def validate_document(status: object) -> list[str]:
                 errors.append(
                     f"{where}.status must be one of: " + ", ".join(sorted(STATUSES))
                 )
+        if status.get("generated_at") is None and status.get("expires_at") is None:
+            # A document without a heartbeat has observed nothing. It may not
+            # claim a healthy rollup or confirmed component states.
+            if status.get("overall") != "unknown":
+                errors.append(
+                    "overall must be unknown when generated_at is null"
+                )
+            for index, component in enumerate(components):
+                if isinstance(component, dict) and component.get("status") != "unknown":
+                    errors.append(
+                        f"components[{index}].status must be unknown when "
+                        "generated_at is null"
+                    )
 
     incidents = status.get("incidents")
     if not isinstance(incidents, list):
@@ -397,11 +432,18 @@ def validate_css(name: str, text: str) -> list[str]:
     return errors
 
 
-def css_declarations(stylesheet: str, selector: str) -> dict[str, str]:
-    """Return the declarations of one selector, merged across duplicate blocks."""
+def css_rule(stylesheet: str, selector: str) -> dict[str, str]:
+    """Return the declarations of the rule whose selector list contains one exact selector.
+
+    A longer selector such as `.status-header__inner` cannot satisfy a request
+    for `.status-header`, so a rule cannot leak into the measurement of another
+    element.
+    """
     declarations: dict[str, str] = {}
     for match in CSS_BLOCK.finditer(stylesheet):
-        if selector not in match.group(1):
+        raw = re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.DOTALL)
+        selectors = [part.strip() for part in raw.split(",")]
+        if selector not in selectors:
             continue
         for declaration in match.group(2).split(";"):
             name, separator, value = declaration.partition(":")
@@ -465,7 +507,7 @@ def validate_no_storage(sources: dict[str, str]) -> list[str]:
 
 
 def validate_no_js_snapshot(name: str, text: str) -> list[str]:
-    """The static page must not present a status or time it cannot have read."""
+    """The static page must not present a status, count, or time it cannot have read."""
     errors: list[str] = []
     page = parse_page(text)
     if next(page.find_all("time"), None) is not None:
@@ -479,19 +521,18 @@ def validate_no_js_snapshot(name: str, text: str) -> list[str]:
         )
 
     status_word = next(page.find_all(element_id="hero-status-text"), None)
-    if status_word is not None:
-        word = status_word.text().strip().lower()
-        if "non disponible" not in word and "non rendu" not in word:
-            errors.append(
-                f"{name}: the no-JS hero must say the snapshot is not rendered, "
-                "not present a status word"
-            )
+    word = status_word.text().strip().lower() if status_word is not None else ""
+    if not word or "non affiché" not in word:
+        errors.append(
+            f"{name}: the no-JS hero must say the published state is not displayed, "
+            "not present a status word"
+        )
 
     summary = next(page.find_all(element_id="overall-summary"), None)
-    if summary is not None and "javascript" not in summary.text().lower():
+    summary_text = summary.text().strip().lower() if summary is not None else ""
+    if NO_JS_PHRASE not in summary_text:
         errors.append(
-            f"{name}: the no-JS summary must say the published data is not "
-            "rendered without JavaScript"
+            f"{name}: the no-JS summary must say {NO_JS_PHRASE!r}"
         )
 
     components = next(page.find_all("ul", element_id="components-list"), None)
@@ -500,20 +541,50 @@ def validate_no_js_snapshot(name: str, text: str) -> list[str]:
         for child in (components.children if components is not None else [])
         if isinstance(child, Element) and child.tag == "li"
     ]
-    for index, row in enumerate(rows, 1):
-        detail = next(row.find_all("p", class_name="component-detail"), None)
-        if detail is not None and "javascript" not in detail.text().lower():
+    if rows:
+        errors.append(
+            f"{name}: the no-JS component list must be empty; a row would be an "
+            "unread component"
+        )
+
+    vitals = next(page.find_all(element_id="vitals"), None)
+    if vitals is not None and "hidden" not in vitals.attrs:
+        errors.append(
+            f"{name}: #vitals must stay hidden until a payload has rendered"
+        )
+
+    for element_id in ("components-count", "incidents-count"):
+        node = next(page.find_all(element_id=element_id), None)
+        text_value = node.text().strip() if node is not None else ""
+        if not text_value:
+            errors.append(f"{name}: #{element_id} must expose its unknown state as text")
+        elif re.search(r"\d", text_value):
             errors.append(
-                f"{name}: component row {index} must say its state is not "
-                "rendered without JavaScript"
+                f"{name}: #{element_id} must not claim a count before status.json is read"
             )
 
-    incidents = next(page.find_all(element_id="incidents-empty"), None)
-    if incidents is not None and "javascript" not in incidents.text().lower():
+    components_empty = next(page.find_all(element_id="components-empty"), None)
+    if components_empty is None or "hidden" in components_empty.attrs:
         errors.append(
-            f"{name}: the no-JS incident note must say incidents are not "
-            "rendered without JavaScript"
+            f"{name}: #components-empty must be visible without JavaScript"
         )
+    elif NO_JS_PHRASE not in components_empty.text().strip().lower():
+        errors.append(
+            f"{name}: #components-empty must use the plain fallback {NO_JS_PHRASE!r}"
+        )
+
+    incidents = next(page.find_all(element_id="incidents-empty"), None)
+    if incidents is None or NO_JS_PHRASE not in incidents.text().strip().lower():
+        errors.append(
+            f"{name}: the no-JS incident note must use the plain fallback "
+            f"{NO_JS_PHRASE!r}"
+        )
+
+    noscript = next(page.find_all("noscript"), None)
+    if noscript is None or not noscript.text().strip():
+        errors.append(f"{name}: <noscript> must explain the static snapshot")
+    elif "status.json" not in noscript.text():
+        errors.append(f"{name}: <noscript> must link or name status.json")
     return errors
 
 
@@ -746,11 +817,6 @@ def validate_page(
                 for child in components.children
                 if isinstance(child, Element) and child.tag == "li"
             ]
-            if not rows:
-                errors.append(
-                    f"{name}: #components-list must contain static <li> rows "
-                    "so the page works without JavaScript"
-                )
             for index, row in enumerate(rows, 1):
                 if "component" not in classes(row):
                     errors.append(f"{name}: component row {index} must use class 'component'")
@@ -779,6 +845,11 @@ def validate_page(
             errors.append(
                 f"{name}: #components-count must expose the component count as text"
             )
+        elif not rows and re.search(r"\d", component_count.text()):
+            errors.append(
+                f"{name}: #components-count must not claim a count before "
+                "status.json is read"
+            )
 
         vitals = next(root.find_all(element_id="vitals"), None)
         if vitals is None:
@@ -800,7 +871,16 @@ def validate_page(
             total = vitals.attrs.get("data-total", "").strip()
             if not total.isdigit():
                 errors.append(f"{name}: #vitals must declare a numeric data-total")
-            elif rows and int(total) != len(rows):
+            elif not rows:
+                if "hidden" not in vitals.attrs:
+                    errors.append(
+                        f"{name}: #vitals must stay hidden until a payload renders"
+                    )
+                if int(total) != 0:
+                    errors.append(
+                        f"{name}: #vitals data-total must be 0 before a payload renders"
+                    )
+            elif int(total) != len(rows):
                 errors.append(
                     f"{name}: #vitals data-total {total!r} must match the "
                     f"{len(rows)} static component rows"
@@ -809,9 +889,13 @@ def validate_page(
         empty = next(root.find_all(element_id="components-empty"), None)
         if empty is None:
             errors.append(f"{name}: missing #components-empty")
-        elif "hidden" not in empty.attrs:
+        elif rows and "hidden" not in empty.attrs:
             errors.append(
                 f"{name}: #components-empty must be hidden when static rows are rendered"
+            )
+        elif not rows and "hidden" in empty.attrs:
+            errors.append(
+                f"{name}: #components-empty must be visible when no row is rendered"
             )
 
         incidents = next(root.find_all("ol", element_id="incidents-list"), None)
@@ -954,43 +1038,110 @@ def validate_brand_marks(
                     f"the {footer_surface} plate, below the 4.5:1 "
                     "meaningful-graphic minimum"
                 )
-    if isinstance(reverse_file, str) and reverse_file.strip():
-        fills = svg_fills(root / reverse_file)
-        if "#FFFFFF" not in fills:
+    stylesheet = stylesheets.get("styles.css", "")
+    brand_stylesheet = next(
+        (
+            text
+            for name, text in stylesheets.items()
+            if re.fullmatch(r"brand\.[0-9a-f]{12}\.css", name)
+        ),
+        "",
+    )
+
+    # Measure the asset the page actually references against the surface the
+    # stylesheet actually paints, not a colour copied into the validator.
+    header_rule = css_rule(stylesheet, ".status-header")
+    header_background = header_rule.get("background", "")
+    header_surface: str | None = None
+    token_match = re.fullmatch(r"var\((--sbk-[a-z0-9-]+)\)", header_background)
+    if token_match is not None:
+        header_surface = brand_properties(brand_stylesheet, dark=True).get(
+            token_match.group(1)
+        )
+        if header_surface is None:
             errors.append(
-                f"{reverse_file}: reverse lockup must keep its white wordmark"
+                f"styles.css: .status-header uses {header_background}, which the "
+                "brand stylesheet does not declare in the dark theme"
             )
-        else:
-            measured = contrast_ratio("#FFFFFF", canvas)
-            if measured < 4.5:
+    elif re.fullmatch(r"#[0-9A-Fa-f]{6}", header_background):
+        header_surface = header_background.upper()
+    else:
+        errors.append(
+            "styles.css: .status-header must paint a brand token or a "
+            "six-digit hex colour so the header mark contrast is measurable"
+        )
+
+    if isinstance(reverse_file, str) and reverse_file.strip() and header_surface:
+        fills = svg_fills(root / reverse_file)
+        approved = {"#FFFFFF", HEADER_LOGOTYPE_FILL}
+        if fills != approved:
+            errors.append(
+                f"{reverse_file}: the reverse lockup must keep exactly the "
+                f"approved fills {sorted(approved)}, found {sorted(fills)}; "
+                "do not recolour the published asset"
+            )
+        for fill in sorted(fills):
+            measured = contrast_ratio(fill, header_surface)
+            if fill == "#FFFFFF":
+                if measured < 4.5:
+                    errors.append(
+                        f"{reverse_file}: white wordmark measures {measured:.2f}:1 "
+                        f"on {header_surface}, below the 4.5:1 minimum"
+                    )
+            elif measured >= 3.0:
+                continue
+            elif fill == HEADER_LOGOTYPE_FILL:
+                if abs(measured - HEADER_LOGOTYPE_RATIO) > 0.01:
+                    errors.append(
+                        f"{reverse_file}: {fill} now measures {measured:.2f}:1 on "
+                        f"{header_surface}, below 3:1 and different from the "
+                        f"recorded logotype exemption {HEADER_LOGOTYPE_RATIO:.2f}:1; "
+                        "re-measure the rendered surface before changing the exemption"
+                    )
+            else:
                 errors.append(
-                    f"{reverse_file}: white wordmark measures {measured:.2f}:1 on "
-                    f"{canvas}, below the 4.5:1 minimum"
+                    f"{reverse_file}: fill {fill} has no contrast decision on "
+                    f"{header_surface}"
                 )
 
-    stylesheet = stylesheets.get("styles.css", "")
-    header = css_declarations(stylesheet, ".status-brand .status-brand__mark")
-    if not header:
+    brand_header = css_rule(brand_stylesheet, ".sbk-brand img")
+    token = re.search(
+        rf"{HEADER_LOGO_TOKEN}\s*:\s*([0-9]+(?:\.[0-9]+)?)px", brand_stylesheet
+    )
+    if not brand_header:
         errors.append(
-            "styles.css: .status-brand .status-brand__mark must size the header mark"
+            "brand.css: .sbk-brand img must size the header mark from the "
+            "brand token"
         )
     else:
-        if header.get("width") != "auto":
+        if brand_header.get("width") != f"var({HEADER_LOGO_TOKEN})":
             errors.append(
-                "styles.css: the header mark must keep width: auto so the "
+                f"brand.css: .sbk-brand img width must be var({HEADER_LOGO_TOKEN}), "
+                f"found {brand_header.get('width')!r}"
+            )
+        if brand_header.get("height") != "auto":
+            errors.append(
+                "brand.css: .sbk-brand img must keep height: auto so the "
                 "reverse lockup retains its intrinsic aspect ratio"
             )
-        if header.get("height") != "var(--status-mark-height)":
+    if token is None or float(token.group(1)) <= 0:
+        errors.append(
+            f"brand.css: must declare a positive {HEADER_LOGO_TOKEN} token"
+        )
+
+    header = css_rule(stylesheet, ".status-brand .status-brand__mark")
+    if not header:
+        errors.append(
+            "styles.css: .status-brand .status-brand__mark must render the header mark"
+        )
+    for property_name in ("width", "height", "filter", "opacity", "transform"):
+        if property_name in header:
             errors.append(
-                "styles.css: the header mark height must come from "
-                "var(--status-mark-height)"
+                f"styles.css: the header mark must not override {property_name}; "
+                f"its size comes from var({HEADER_LOGO_TOKEN}) and the published "
+                "asset is rendered unchanged"
             )
-        if "filter" in header:
-            errors.append(
-                "styles.css: the header mark must not be recoloured with a filter; "
-                "render the published reverse lockup unchanged"
-            )
-    footer_rule = css_declarations(stylesheet, ".status-footer__mark")
+    footer_rule = css_rule(stylesheet, ".status-footer__mark")
     if not footer_rule:
         errors.append("styles.css: .status-footer__mark must size the footer mark")
     else:
@@ -1017,14 +1168,6 @@ def validate_brand_marks(
                 "styles.css: the footer mark must not be faded; its contrast is "
                 "measured at full opacity"
             )
-    mark_height = css_declarations(stylesheet, ":root").get(
-        "--status-mark-height", ""
-    )
-    height_match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)rem", mark_height)
-    if height_match is None or not 2 <= float(height_match.group(1)) <= 3:
-        errors.append(
-            "styles.css: --status-mark-height must be between 2rem and 3rem"
-        )
 
     for name, text in pages.items():
         page = parse_page(text)
@@ -1100,6 +1243,17 @@ def validate_manifest_assets(
             continue
         if not (root / filename).is_file():
             errors.append(f"{filename}: published brand asset is missing")
+            continue
+        data = (root / filename).read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != asset.get("sha256"):
+            errors.append(
+                f"{filename}: SHA-256 {digest} does not match the manifest"
+            )
+        if len(data) != asset.get("bytes"):
+            errors.append(
+                f"{filename}: {len(data)} bytes do not match the manifest"
+            )
         if not any(filename in text for text in references):
             errors.append(
                 f"{filename}: published but not referenced by a page or stylesheet"
@@ -1190,7 +1344,7 @@ def validate_site(root: Path) -> list[str]:
         errors.extend(validate_no_js_snapshot("index.html", pages["index.html"]))
     sources: dict[str, str] = dict(pages)
     sources.update(stylesheets)
-    for name in ("app.js", "templates/index.html", "templates/404.html"):
+    for name in ("app.js", "status-model.js", "templates/index.html", "templates/404.html"):
         path = root / name
         if path.is_file():
             try:

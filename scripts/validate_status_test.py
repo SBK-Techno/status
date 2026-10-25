@@ -9,9 +9,11 @@ import importlib.util
 import io
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).with_name("validate_status.py")
@@ -142,6 +144,56 @@ class ValidateStatusTest(unittest.TestCase):
         for name, mutate in cases.items():
             with self.subTest(name=name):
                 self.assertNotEqual(run(mutate), "")
+
+    def test_rejects_null_heartbeat_with_a_healthy_claim(self) -> None:
+        document = valid_document()
+        document["generated_at"] = None
+        document["expires_at"] = None
+        errors = " | ".join(VALIDATOR.validate_document(document))
+        self.assertIn("overall must be unknown when generated_at is null", errors)
+        self.assertIn(
+            "components[0].status must be unknown when generated_at is null",
+            errors,
+        )
+
+    def test_rejects_empty_and_future_heartbeats(self) -> None:
+        fixed = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+
+        empty = valid_document()
+        empty["generated_at"] = ""
+        empty["expires_at"] = ""
+        self.assertIn(
+            "generated_at must be null or a UTC ISO 8601 timestamp",
+            " | ".join(VALIDATOR.validate_document(empty, now=fixed)),
+        )
+
+        future = valid_document()
+        future["generated_at"] = "2026-10-25T12:06:00Z"
+        future["expires_at"] = "2026-10-25T12:11:00Z"
+        self.assertIn(
+            "generated_at must not be more than 5 minutes in the future",
+            " | ".join(VALIDATOR.validate_document(future, now=fixed)),
+        )
+
+        skewed = valid_document()
+        skewed["generated_at"] = "2026-10-25T12:04:00Z"
+        skewed["expires_at"] = "2026-10-25T12:09:00Z"
+        self.assertEqual(VALIDATOR.validate_document(skewed, now=fixed), [])
+
+    def test_render_state_contract_covers_null_and_failed_fetch(self) -> None:
+        node = subprocess.run(
+            ["node", str(Path(__file__).with_name("status_model_test.mjs"))],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(
+            node.returncode,
+            0,
+            f"status model contract failed:\n{node.stdout}\n{node.stderr}",
+        )
+        self.assertIn("status model ok", node.stdout)
 
     def test_accepts_valid_page(self) -> None:
         self.assertEqual(
@@ -324,8 +376,11 @@ class ValidateStatusTest(unittest.TestCase):
                     '<ul id="components-list"></ul>',
                     p,
                     flags=re.S,
+                ).replace(
+                    '<span id="components-count">01</span>',
+                    '<span id="components-count">01</span>',
                 ),
-                "static <li> rows",
+                "#components-count must not claim a count",
             ),
             "components empty visible": (
                 lambda p: p.replace(
@@ -638,6 +693,7 @@ class ValidateStatusTest(unittest.TestCase):
                 "index.html",
                 "404.html",
                 "app.js",
+                "status-model.js",
                 "styles.css",
                 "templates/index.html",
                 "templates/404.html",
@@ -675,13 +731,13 @@ class ValidateStatusTest(unittest.TestCase):
                 self.assertNotIn(document["summary_fr"], text)
                 if document["generated_at"] is not None:
                     self.assertNotIn(document["generated_at"], text)
-                self.assertIn("non rendu", text.lower())
+                self.assertIn(VALIDATOR.NO_JS_PHRASE, text.lower())
 
     def test_no_js_snapshot_rejects_a_hardcoded_status_or_time(self) -> None:
         root = Path(__file__).resolve().parent.parent
         text = (root / "index.html").read_text(encoding="utf-8")
         broken = text.replace(
-            '<span id="hero-status-text">non disponible</span>',
+            '<span id="hero-status-text">non affiché</span>',
             '<span id="hero-status-text">opérationnel</span>',
             1,
         ).replace(
@@ -691,7 +747,177 @@ class ValidateStatusTest(unittest.TestCase):
         )
         errors = " | ".join(VALIDATOR.validate_no_js_snapshot("index.html", broken))
         self.assertIn("must not hard-code <time>", errors)
-        self.assertIn("must say the snapshot is not rendered", errors)
+        self.assertIn("must say the published state is not displayed", errors)
+
+    def test_no_js_snapshot_rejects_a_fabricated_count_or_row(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        text = (root / "index.html").read_text(encoding="utf-8")
+        numeric = text.replace(
+            '<p class="section-count" id="components-count">Non affiché</p>',
+            '<p class="section-count" id="components-count">01</p>',
+            1,
+        )
+        self.assertIn(
+            "#components-count must not claim a count",
+            " | ".join(VALIDATOR.validate_no_js_snapshot("index.html", numeric)),
+        )
+
+        row = text.replace(
+            '<ul class="components" id="components-list"></ul>',
+            '<ul class="components" id="components-list">'
+            '<li class="component" data-status="unknown">'
+            "<h3>Instantané non rendu</h3></li></ul>",
+            1,
+        )
+        self.assertIn(
+            "the no-JS component list must be empty",
+            " | ".join(VALIDATOR.validate_no_js_snapshot("index.html", row)),
+        )
+
+    def test_header_lockup_contrast_uses_the_rendered_asset_and_surface(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads(
+            (root / "brand.manifest.json").read_text(encoding="utf-8")
+        )
+        assets = {asset["name"]: asset for asset in manifest["assets"]}
+        reverse = assets[VALIDATOR.REVERSE_LOCKUP]["file"]
+        footer = assets[VALIDATOR.FOOTER_ICON]["file"]
+        page = (root / "index.html").read_text(encoding="utf-8")
+        stylesheet = (root / "styles.css").read_text(encoding="utf-8")
+        brand_stylesheet = next(
+            (root / asset["file"]).read_text(encoding="utf-8")
+            for asset in manifest["assets"]
+            if asset["name"] == "brand.css"
+        )
+        stylesheets = {
+            "styles.css": stylesheet,
+            "brand.c0268e99a0fe.css": brand_stylesheet,
+        }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            copy_root = Path(temporary)
+            shutil.copyfile(root / reverse, copy_root / reverse)
+            shutil.copyfile(root / footer, copy_root / footer)
+
+            approved = VALIDATOR.validate_brand_marks(
+                copy_root,
+                {"index.html": page},
+                manifest,
+                stylesheets,
+                "#080A0F",
+                "#EDF1F7",
+            )
+            self.assertEqual(" | ".join(approved), "")
+
+            recoloured = (root / reverse).read_text(encoding="utf-8").replace(
+                "#2255BC", "#111111"
+            )
+            (copy_root / reverse).write_text(recoloured, encoding="utf-8")
+            errors = " | ".join(
+                VALIDATOR.validate_brand_marks(
+                    copy_root,
+                    {"index.html": page},
+                    manifest,
+                    stylesheets,
+                    "#080A0F",
+                    "#EDF1F7",
+                )
+            )
+            self.assertIn("approved fills", errors)
+            self.assertIn("no contrast decision", errors)
+
+    def test_header_surface_change_invalidates_the_exemption(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads(
+            (root / "brand.manifest.json").read_text(encoding="utf-8")
+        )
+        page = (root / "index.html").read_text(encoding="utf-8")
+        stylesheet = (root / "styles.css").read_text(encoding="utf-8")
+        brand_stylesheet = next(
+            (root / asset["file"]).read_text(encoding="utf-8")
+            for asset in manifest["assets"]
+            if asset["name"] == "brand.css"
+        )
+        surface = stylesheet.replace(
+            "background: var(--sbk-canvas);",
+            "background: var(--sbk-surface);",
+            1,
+        )
+        errors = " | ".join(
+            VALIDATOR.validate_brand_marks(
+                root,
+                {"index.html": page},
+                manifest,
+                {"styles.css": surface, "brand.c0268e99a0fe.css": brand_stylesheet},
+                "#080A0F",
+                "#EDF1F7",
+            )
+        )
+        self.assertIn("recorded logotype exemption", errors)
+
+    def test_header_mark_cannot_override_the_brand_token(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads(
+            (root / "brand.manifest.json").read_text(encoding="utf-8")
+        )
+        page = (root / "index.html").read_text(encoding="utf-8")
+        stylesheet = (root / "styles.css").read_text(encoding="utf-8")
+        brand_stylesheet = next(
+            (root / asset["file"]).read_text(encoding="utf-8")
+            for asset in manifest["assets"]
+            if asset["name"] == "brand.css"
+        )
+        overridden = stylesheet + (
+            "\n.status-brand .status-brand__mark { width: 96px; height: 40px; }\n"
+        )
+        errors = " | ".join(
+            VALIDATOR.validate_brand_marks(
+                root,
+                {"index.html": page},
+                manifest,
+                {
+                    "styles.css": overridden,
+                    "brand.c0268e99a0fe.css": brand_stylesheet,
+                },
+                "#080A0F",
+                "#EDF1F7",
+            )
+        )
+        self.assertIn("must not override width", errors)
+        self.assertIn("must not override height", errors)
+
+    def test_manifest_digest_drift_is_rejected(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads(
+            (root / "brand.manifest.json").read_text(encoding="utf-8")
+        )
+        reverse = next(
+            asset for asset in manifest["assets"]
+            if asset["name"] == VALIDATOR.REVERSE_LOCKUP
+        )
+        filename = reverse["file"]
+        isolated = {
+            "version": 1,
+            "generatedBy": "validate_status_test",
+            "assets": [reverse],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            copy_root = Path(temporary)
+            shutil.copyfile(root / filename, copy_root / filename)
+            references = {"index.html": filename}
+            self.assertEqual(
+                VALIDATOR.validate_manifest_assets(
+                    copy_root, isolated, references, {}
+                ),
+                [],
+            )
+            (copy_root / filename).write_text("<svg/>", encoding="utf-8")
+            errors = " | ".join(
+                VALIDATOR.validate_manifest_assets(
+                    copy_root, isolated, references, {}
+                )
+            )
+            self.assertIn("SHA-256", errors)
 
     def test_pages_allow_self_hosted_fonts(self) -> None:
         root = Path(__file__).resolve().parent.parent

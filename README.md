@@ -15,7 +15,20 @@ Public, static service status page for `status.ia.sbktechno.com`, hosted on GitH
 
 The site is an SBK-operated surface, so it uses the same web brand system as the operator portal and the private documentation. The brand repository's `assets.json` is the single owner of the logical web assets, and `assets/web/manifest.json` maps each logical name to a content-hashed file, digest, media type, and byte size. This repository never keeps its own asset list.
 
-The graphite header renders the brand layer's approved `logo-reverse.svg` unchanged, at its intrinsic 284x118 aspect ratio. The footer uses the published `icon-color.svg` on a `--sbk-text` plate: the brand blue measures 2.92:1 directly on the `#080A0F` canvas, 5.99:1 on the plate, and the plate separates from the canvas at 17.47:1. `cmd/genstatus` resolves the reverse lockup and the icon from the brand manifest, rejects the colour lockup on the status surface, and fails closed when the reverse lockup is missing.
+The graphite header renders the brand layer's approved `logo-reverse.svg` unchanged, at its intrinsic 284x118 aspect ratio. Its width comes from the brand's `--sbk-logo-header` token (112 px, height auto), so the status page does not define its own header size. The brand guideline's 240 px minimum applies to client logos; the SBK issuer lockup uses the 112 px token. The footer uses the published `icon-color.svg` on a `--sbk-text` plate: the brand blue measures 2.92:1 directly on the `#080A0F` canvas, 5.99:1 on the plate, and the plate separates from the canvas at 17.47:1. `cmd/genstatus` resolves the reverse lockup and the icon from the brand manifest, rejects the colour lockup on the status surface, and fails closed when the reverse lockup is missing.
+
+### Header lockup size and contrast
+
+The header lockup is the brand's logotype, so WCAG 1.4.11's logotype exemption applies to it. The validator records one explicit exemption: the approved `#2255BC` fill measures 2.92:1 on the rendered `#080A0F` header surface, below the 3:1 non-text threshold. No uniform surface can satisfy both elements: the blue needs a light surface (where the white wordmark falls below 2.5:1) and the white wordmark needs a dark one (where the blue stays at or below 2.92:1).
+
+The exemption is not a blanket pass. `scripts/validate_status.py`:
+
+- reads the surface from `.status-header` in `styles.css` and the fills from the file the page references;
+- requires exactly the approved fills `#FFFFFF` and `#2255BC`, so a recolour such as `#111111` fails;
+- requires the white wordmark to reach 4.5:1 and the recorded blue ratio to match the rendered surface, so a surface change fails until it is re-approved;
+- verifies every published asset's SHA-256 and byte size and checks that the header size comes from `--sbk-logo-header`.
+
+Lifting the exemption requires the brand layer to publish a dark-surface variant whose icon and `TECHNOLOGIES` label reach 3:1 while the wordmark remains legible; this repository must not recolour the published asset.
 
 `templates/index.html` and `templates/404.html` are the source. They reference assets with `{{asset:<logical-name>}}` placeholders. `make brand` runs `cmd/genstatus` from the platform checkout, which:
 
@@ -34,7 +47,9 @@ The platform command `cmd/brandlint` is the design gate for every SBK-operated s
 
 The public board is a graphite surface (`data-theme="dark"`). It opens on a full-viewport panel with a text status word in the status colour, a monospaced check time, and a compact inline-SVG vitals instrument on the right. The instrument is decorative and `aria-hidden`; its arcs and counts mirror the component board, which is the accessible source of the same facts. The component rows and the incident timeline are separated by hairlines rather than cards. The theme colour is the dark canvas token, not a second literal.
 
-The static HTML does not claim a status or a time it has not read. With JavaScript disabled the page says the published snapshot is not rendered, shows no status word or hard-coded timestamps, keeps the `<noscript>` note, and links `status.json`; the language switch and any refresh claim stay hidden.
+The static HTML does not claim a status, a count, or a time it has not read. With JavaScript disabled the page says `L'état publié n'est pas affiché`, shows no component rows, no numeric count, no instrument, no hard-coded timestamps, keeps the `<noscript>` note, and links `status.json`; the language switch and the check time stay hidden. The same phrase is the single fallback used by the hero, the component board, and the incident journal.
+
+The error and stale banners sit above the hero, so a failed read or an unconfirmed heartbeat is visible on the first screen at every width.
 
 ## Hosting and DNS
 
@@ -56,11 +71,12 @@ The page fetches the file every 60 seconds with `cache: "no-store"` and a cache-
 
 Freshness rules:
 
-- `generated_at` is null: stale.
-- `expires_at` is in the past: stale.
-- `generated_at` is older than 15 minutes: stale.
-- Stale data keeps the component rows and their last reported state, forces the overall hero state to `unknown`, and shows the stale banner. The banner is the single stale marker; rows stay clean.
-- A failed fetch keeps the last rendered data and shows an error banner with a retry button. If nothing has loaded yet, the page shows an explicit error state.
+- `generated_at` is null, empty, or unparseable: no heartbeat. `overall` and every component must be `unknown`; the validator rejects a document that claims a healthy state without a heartbeat.
+- `generated_at` is more than 5 minutes in the future: invalid. Both the validator and the page reject the claim instead of treating the negative age as fresh.
+- `expires_at` is in the past, or `generated_at` is older than 15 minutes: stale.
+- A missing, empty, or future heartbeat forces every rendered component row and every vitals count to `unknown`, shows no verification time, and opens with the stale banner above the hero. The document's own summary is not repeated as a healthy claim.
+- An expired or aged heartbeat keeps the last reported rows and their `État au <generated_at>` time, forces the overall hero state to `unknown`, and shows the stale banner. The banner is the single stale marker; rows stay clean.
+- A failed fetch renders every component as unknown by rendering none, hides the vitals instrument, sets the component and incident counts to `L'état publié n'est pas affiché`, sets the check time and snapshot to `Inconnu`, and puts the error banner above the hero. A failed attempt never moves the check time; when last data exists, the page keeps it and shows the last successful read time.
 
 The publisher writes `generated_at` and `expires_at` in UTC. `expires_at` is at most 15 minutes after `generated_at`. The page treats the signal as stale after that window even if `expires_at` is later, so the timer must run more often than 15 minutes. Incidents stay operator-owned: the publisher copies them from its configured incident file and never invents or resolves one.
 
@@ -105,7 +121,7 @@ Required fields:
 - Component: `id` (unique), `label_fr`, `label_en`, `status`, `detail_fr`, `detail_en`.
 - Incident: `id` (unique), `status`, `title_fr`, `title_en`, `started_at`, `updated_at`, `summary_fr`, `summary_en`.
 - `version` must be `1`.
-- `generated_at` and `expires_at` are null or UTC ISO 8601 timestamps. Incident timestamps are UTC ISO 8601 timestamps.
+- `generated_at` and `expires_at` are null or UTC ISO 8601 timestamps, and both must be null or both set. When they are null, `overall` and every component status must be `unknown`; a document cannot claim a confirmed state without a heartbeat. A heartbeat more than 5 minutes in the future is rejected. Incident timestamps are UTC ISO 8601 timestamps.
 - `components` must be a non-empty list. Components are rendered in JSON order.
 - Active incidents are rendered before resolved incidents. Within each group, JSON order is preserved.
 
@@ -152,15 +168,17 @@ make validate
 
 The workflow checks:
 
-- The published assets match the SHA-256 digests and byte sizes in `brand.manifest.json`.
+- The published assets match the SHA-256 digests and byte sizes in `brand.manifest.json`, verified by both the workflow and `validate_manifest_assets`.
 - `index.html` and `404.html` reference every published asset and contain no unresolved placeholder.
-- `status.json` passes `scripts/validate_status.py`: schema version 1, valid statuses, unique ids, both languages, UTC `Z` timestamps, paired `generated_at`/`expires_at`, and a lifetime of at most 15 minutes.
+- `status.json` passes `scripts/validate_status.py`: schema version 1, valid statuses, unique ids, both languages, UTC `Z` timestamps, paired `generated_at`/`expires_at`, a lifetime of at most 15 minutes, no heartbeat more than 5 minutes in the future, and no healthy claim when `generated_at` is null.
+- The no-JS snapshot is checked: it has no `<time>`, no hard-coded timestamp, no component rows, no numeric count, a hidden vitals instrument, and the single `L'état publié n'est pas affiché` fallback.
+- The header mark is measured from the file the page references and the surface `.status-header` paints; recoloured fills, a changed surface, and a header-size override fail.
 - Every incident has the required fields and `updated_at` is not before `started_at`.
 - The same validator runs in `publish.yml` before a signed heartbeat is committed.
 - `CNAME` is exactly `status.ia.sbktechno.com` with a final newline.
-- `index.html`, `styles.css`, and `app.js` exist and are non-empty.
+- `index.html`, `styles.css`, `app.js`, and `status-model.js` exist and are non-empty.
 
-`make validate` runs the JSON parse and delegates to the platform generator check locally. The status workflow verifies the manifest and assets without a platform checkout; the platform `cmd/brandlint` scan is the canonical design gate and also scans this sibling checkout when present.
+`make validate` runs the JSON parse and delegates to the platform generator check locally. `python3 -m unittest discover -s scripts -p '*_test.py'` also runs `scripts/status_model_test.mjs` through Node so the null-heartbeat and failed-fetch render states are gated with the browser model.
 
 No third-party action is used beyond `actions/checkout`.
 

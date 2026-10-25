@@ -9,7 +9,6 @@
 
 :root {
   --status-header-block: 4.75rem;
-  --status-mark-height: 2.5rem;
   --status-grid-gap: clamp(var(--sbk-space-2), 1.25vw, var(--sbk-space-5));
 }
 
@@ -77,18 +76,19 @@ main:focus-visible {
 /*
  * The brand layer publishes the approved reverse lockup for dark surfaces.
  * Rendering that asset directly keeps its white wordmark and its blue icon and
- * label intact; a filter would recolour a mark the brand owns.
+ * label intact; a filter would recolour a mark the brand owns. Its width comes
+ * from the brand's --sbk-logo-header token, so the status page does not invent
+ * a fourth header size. The brand blue is a documented logotype exemption; see
+ * README.md, "Header lockup size and contrast".
  */
 .status-brand .status-brand__mark {
   display: block;
-  width: auto;
-  height: var(--status-mark-height);
   flex: none;
 }
 
 .status-brand__divider {
   width: 1px;
-  height: calc(var(--status-mark-height) * 0.6);
+  height: var(--sbk-space-6);
   flex: none;
   background: var(--sbk-border-strong);
 }
@@ -1483,7 +1483,6 @@ main:focus-visible {
 @media (max-width: 48rem) {
   :root {
     --status-header-block: 4.25rem;
-    --status-mark-height: 2.25rem;
   }
 
   .status-header__inner {
@@ -1566,7 +1565,7 @@ main:focus-visible {
   }
 
   .status-brand__divider {
-    height: calc(var(--status-mark-height) * 0.7);
+    height: var(--sbk-space-5);
   }
 
   .hero__host {
