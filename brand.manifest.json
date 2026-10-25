@@ -27,12 +27,20 @@
       "bytes": 11816
     },
     {
+      "name": "archivo-italic-400.woff2",
+      "file": "archivo-italic-400.84377d8fd063.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "84377d8fd063525351f583e315bf665c8af931ffe47bae7dc53c920b1adb2625",
+      "bytes": 54516
+    },
+    {
       "name": "brand.css",
-      "file": "brand.feb52ba6b3fe.css",
+      "file": "brand.172d4925652c.css",
       "mediaType": "text/css; charset=utf-8",
       "publish": true,
-      "sha256": "feb52ba6b3feae291e0318a394b616d81a56925511850410eeb836064402fa54",
-      "bytes": 8241
+      "sha256": "172d4925652ca8716025a4f8e8ac2c6854f9b481bd5546512a82ed65f9268363",
+      "bytes": 8414
     },
     {
       "name": "favicon.ico",
