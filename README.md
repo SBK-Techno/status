@@ -15,6 +15,8 @@ Public, static service status page for `status.ia.sbktechno.com`, hosted on GitH
 
 The site is an SBK-operated surface, so it uses the same web brand system as the operator portal and the private documentation. The brand repository's `assets.json` is the single owner of the logical web assets, and `assets/web/manifest.json` maps each logical name to a content-hashed file, digest, media type, and byte size. This repository never keeps its own asset list.
 
+The graphite header renders the brand layer's approved `logo-reverse.svg` unchanged, at its intrinsic 284x118 aspect ratio. The footer uses the published `icon-color.svg` on a `--sbk-text` plate: the brand blue measures 2.92:1 directly on the `#080A0F` canvas, 5.99:1 on the plate, and the plate separates from the canvas at 17.47:1. `cmd/genstatus` resolves the reverse lockup and the icon from the brand manifest, rejects the colour lockup on the status surface, and fails closed when the reverse lockup is missing.
+
 `templates/index.html` and `templates/404.html` are the source. They reference assets with `{{asset:<logical-name>}}` placeholders. `make brand` runs `cmd/genstatus` from the platform checkout, which:
 
 - resolves every placeholder from the brand manifest and fails on an unknown name, an unresolved placeholder, or a literal hashed filename;

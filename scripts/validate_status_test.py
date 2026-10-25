@@ -23,7 +23,7 @@ SPEC.loader.exec_module(VALIDATOR)
 
 def valid_page() -> str:
     return """<!doctype html>
-<html lang="fr-CA" data-theme="dark">
+<html lang="fr-CA" class="no-js" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -67,19 +67,8 @@ def valid_page() -> str:
 </html>"""
 
 
-def channel(value: int) -> float:
-    value = value / 255
-    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
-
-
-def luminance(color: str) -> float:
-    red, green, blue = (int(color[index : index + 2], 16) for index in (1, 3, 5))
-    return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
-
-
 def ratio(foreground: str, background: str) -> float:
-    first, second = sorted((luminance(foreground), luminance(background)), reverse=True)
-    return (first + 0.05) / (second + 0.05)
+    return VALIDATOR.contrast_ratio(foreground, background)
 
 
 def valid_document() -> dict:
@@ -371,6 +360,17 @@ class ValidateStatusTest(unittest.TestCase):
                 lambda p: p.replace('data-theme="dark"', 'data-theme="light"'),
                 "graphite surface",
             ),
+            "missing no-js": (
+                lambda p: p.replace(' class="no-js"', ""),
+                "no-js",
+            ),
+            "external preconnect": (
+                lambda p: p.replace(
+                    "</head>",
+                    '<link rel="preconnect" href="https://cdn.example"></head>',
+                ),
+                "third-party origin",
+            ),
             "missing color scheme": (
                 lambda p: p.replace('<meta name="color-scheme" content="dark">', ""),
                 "color-scheme meta",
@@ -397,9 +397,9 @@ class ValidateStatusTest(unittest.TestCase):
                 ),
                 "header mark",
             ),
-            "mark too tall": (
-                lambda p: p.replace('width="96" height="40"', 'width="96" height="80"', 1),
-                "must be between 32 and 48",
+            "mark non-numeric": (
+                lambda p: p.replace('width="96" height="40"', 'width="wide" height="40"', 1),
+                "numeric width and height",
             ),
             "missing hero": (
                 lambda p: p.replace(
@@ -480,6 +480,140 @@ class ValidateStatusTest(unittest.TestCase):
     def test_repository_site_is_valid(self) -> None:
         root = Path(__file__).resolve().parent.parent
         self.assertEqual(VALIDATOR.validate_site(root), [])
+
+    def test_repository_brand_marks_are_the_approved_graphite_assets(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads(
+            (root / "brand.manifest.json").read_text(encoding="utf-8")
+        )
+        assets = {asset["name"]: asset for asset in manifest["assets"]}
+        reverse = assets[VALIDATOR.REVERSE_LOCKUP]
+        footer = assets[VALIDATOR.FOOTER_ICON]
+        self.assertRegex(reverse["file"], r"^logo-reverse\.[0-9a-f]{12}\.svg$")
+        self.assertRegex(footer["file"], r"^icon-color\.[0-9a-f]{12}\.svg$")
+        self.assertEqual(
+            VALIDATOR.svg_dimensions(root / reverse["file"]), (284.0, 118.0)
+        )
+        self.assertEqual(VALIDATOR.svg_fills(root / footer["file"]), {"#2255BC"})
+        self.assertAlmostEqual(
+            VALIDATOR.contrast_ratio("#2255BC", "#EDF1F7"), 5.99, places=2
+        )
+        self.assertAlmostEqual(
+            VALIDATOR.contrast_ratio("#EDF1F7", "#080A0F"), 17.47, places=2
+        )
+        for name in ("index.html", "404.html"):
+            with self.subTest(page=name):
+                text = (root / name).read_text(encoding="utf-8")
+                self.assertIn(f'src="/{reverse["file"]}"', text)
+                self.assertIn(f'src="/{footer["file"]}"', text)
+                self.assertNotIn("logo-color.", text)
+                self.assertIn('alt="SBK Techno"', text)
+                self.assertIn('class="status-footer__mark"', text)
+
+    def test_brand_marks_reject_a_colour_lockup_or_distortion(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads(
+            (root / "brand.manifest.json").read_text(encoding="utf-8")
+        )
+        stylesheets = {
+            "styles.css": (root / "styles.css").read_text(encoding="utf-8")
+        }
+        page = (root / "index.html").read_text(encoding="utf-8")
+        assets = {asset["name"]: asset for asset in manifest["assets"]}
+        colour = "logo-color.000000000000.svg"
+        reverse = assets[VALIDATOR.REVERSE_LOCKUP]["file"]
+
+        cases = {
+            "colour lockup": (
+                page.replace(f"/{reverse}", f"/{colour}", 1),
+                "reverse lockup",
+            ),
+            "distorted": (
+                page.replace('width="284" height="118"', 'width="96" height="40"', 1),
+                "distorts the reverse lockup aspect ratio",
+            ),
+        }
+        for name, (mutated, expected) in cases.items():
+            with self.subTest(case=name):
+                errors = VALIDATOR.validate_brand_marks(
+                    root,
+                    {"index.html": mutated},
+                    manifest,
+                    stylesheets,
+                    "#080A0F",
+                    "#EDF1F7",
+                )
+                self.assertIn(expected, " | ".join(errors))
+
+    def test_brand_marks_reject_recolouring_and_fading(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads(
+            (root / "brand.manifest.json").read_text(encoding="utf-8")
+        )
+        page = (root / "index.html").read_text(encoding="utf-8")
+        css = (root / "styles.css").read_text(encoding="utf-8")
+        cases = {
+            "filter": (
+                css + "\n.status-footer__mark { filter: brightness(0) invert(1); }\n",
+                "must not be recoloured",
+            ),
+            "opacity": (
+                css + "\n.status-footer__mark { opacity: 0.75; }\n",
+                "must not be faded",
+            ),
+        }
+        for name, (mutated, expected) in cases.items():
+            with self.subTest(case=name):
+                errors = VALIDATOR.validate_brand_marks(
+                    root,
+                    {"index.html": page},
+                    manifest,
+                    {"styles.css": mutated},
+                    "#080A0F",
+                    "#EDF1F7",
+                )
+                self.assertIn(expected, " | ".join(errors))
+
+    def test_rejects_cookie_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "status.json").write_text(
+                json.dumps(valid_document()), encoding="utf-8"
+            )
+            (root / "CNAME").write_bytes(VALIDATOR.CNAME)
+            (root / ".nojekyll").write_text("", encoding="utf-8")
+            (root / "styles.css").write_text("body { color: #000; }", encoding="utf-8")
+            (root / "app.js").write_text(
+                "document.cookie = 'session=1';", encoding="utf-8"
+            )
+            (root / "index.html").write_text(valid_page(), encoding="utf-8")
+            (root / "404.html").write_text(valid_page(), encoding="utf-8")
+
+            errors = VALIDATOR.validate_site(root)
+            self.assertIn("cookies are not part of the status contract", " | ".join(errors))
+
+    def test_rejects_unreferenced_published_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "orphan.svg").write_text("<svg/>", encoding="utf-8")
+            manifest = {
+                "assets": [
+                    {"name": "orphan.svg", "file": "orphan.svg", "publish": True}
+                ]
+            }
+            errors = VALIDATOR.validate_manifest_assets(root, manifest, {}, {})
+            self.assertIn("not referenced", " | ".join(errors))
+
+    def test_footer_icon_contrast_on_graphite(self) -> None:
+        self.assertAlmostEqual(
+            VALIDATOR.contrast_ratio("#2255BC", "#080A0F"), 2.92, places=2
+        )
+        self.assertAlmostEqual(
+            VALIDATOR.contrast_ratio("#2255BC", "#EDF1F7"), 5.99, places=2
+        )
+        self.assertAlmostEqual(
+            VALIDATOR.contrast_ratio("#EDF1F7", "#080A0F"), 17.47, places=2
+        )
 
     def test_pages_allow_self_hosted_fonts(self) -> None:
         root = Path(__file__).resolve().parent.parent
