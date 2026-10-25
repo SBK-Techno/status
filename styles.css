@@ -32,6 +32,12 @@ main.sbk-shell {
   outline-offset: var(--sbk-space-1);
 }
 
+/* The skip link moves focus to <main>, which needs its own visible ring. */
+main:focus-visible {
+  outline: 2px solid var(--sbk-focus);
+  outline-offset: -2px;
+}
+
 .dot {
   display: inline-block;
   width: var(--sbk-space-1);
@@ -42,6 +48,13 @@ main.sbk-shell {
 }
 
 /* Language switch */
+
+/* These controls and behaviours need app.js; without it the page stays in its
+   published French snapshot and does not claim a refresh it cannot perform. */
+.no-js .lang,
+.no-js .refresh-note {
+  display: none;
+}
 
 .lang {
   display: inline-flex;
@@ -83,7 +96,7 @@ main.sbk-shell {
 }
 
 .lang-sep {
-  color: var(--sbk-rule-strong);
+  color: var(--sbk-muted);
   font-size: 0.75rem;
 }
 
@@ -101,6 +114,13 @@ main.sbk-shell {
   letter-spacing: 0.1em;
   line-height: 1.4;
   text-transform: uppercase;
+}
+
+.page-title,
+.hero-status,
+.section-title {
+  font-family: var(--sbk-font-display);
+  font-weight: 700;
 }
 
 .page-title {
@@ -219,14 +239,19 @@ main.sbk-shell {
   transition: background-color 160ms ease, border-color 160ms ease;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--sbk-ink);
   border-color: var(--sbk-ink);
 }
 
+/* A disabled control still has to be readable: opacity would blend the label
+   and the fill together and drop the pair below 4.5:1. */
 .btn:disabled {
-  opacity: 0.55;
-  cursor: wait;
+  border-color: var(--sbk-rule-strong);
+  background: var(--sbk-surface-strong);
+  color: var(--sbk-ink);
+  cursor: progress;
+  transition: none;
 }
 
 /* Overall status */
@@ -381,6 +406,26 @@ main.sbk-shell {
   flex-direction: column;
   align-items: flex-end;
   gap: var(--sbk-space-1);
+  flex-wrap: wrap;
+}
+
+.component-meta {
+  margin: 0;
+  color: var(--sbk-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.component-meta .label {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.component-meta time {
+  color: var(--sbk-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .pill {
@@ -409,8 +454,9 @@ main.sbk-shell {
 
 .stale-flag {
   color: var(--sbk-warning);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   line-height: 1.4;
   text-transform: uppercase;
   border-bottom: 1px dashed var(--sbk-warning);
@@ -627,9 +673,15 @@ main.error-page {
 
   .component-side {
     flex-direction: row;
-    align-items: center;
+    flex-wrap: wrap;
+    align-items: baseline;
     justify-content: flex-start;
-    gap: var(--sbk-space-3);
+    gap: var(--sbk-space-2) var(--sbk-space-3);
+  }
+
+  .component-meta {
+    flex: 1 1 12rem;
+    text-align: left;
   }
 
   .incident {
