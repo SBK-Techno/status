@@ -75,16 +75,15 @@ main:focus-visible {
 }
 
 /*
- * The brand layer publishes the colour wordmark; the graphite shell needs the
- * white variant. The filter maps that published mark to its white form, which
- * is the same geometry as the brand's white master, without a second asset.
+ * The brand layer publishes the approved reverse lockup for dark surfaces.
+ * Rendering that asset directly keeps its white wordmark and its blue icon and
+ * label intact; a filter would recolour a mark the brand owns.
  */
 .status-brand .status-brand__mark {
   display: block;
   width: auto;
   height: var(--status-mark-height);
   flex: none;
-  filter: brightness(0) invert(1);
 }
 
 .status-brand__divider {
@@ -1062,12 +1061,20 @@ main:focus-visible {
   line-height: 1.4;
 }
 
+/*
+ * The published icon is brand blue. That blue measures 2.92:1 directly on the
+ * graphite canvas, so the mark sits on the text-colour plate, where it measures
+ * 5.99:1; the plate separates from the canvas at 17.47:1. The icon is not
+ * recoloured, and the plate keeps the 16px icon at its intrinsic geometry.
+ */
 .status-footer__mark {
+  box-sizing: content-box;
   width: 16px;
   height: 16px;
+  padding: 2px;
   flex: none;
-  filter: brightness(0) invert(1);
-  opacity: 0.75;
+  border-radius: var(--sbk-radius-sm);
+  background: var(--sbk-text);
 }
 
 .status-footer__snapshot {
@@ -1134,6 +1141,14 @@ main:focus-visible {
    in place and no dead control is shown. This rule follows the layout rule so
    it wins at equal specificity. */
 .no-js .status-footer .lang {
+  display: none;
+}
+
+/* The vitals instrument and the check time are derived from status.json;
+   without JavaScript they would show placeholders, so they stay out of the
+   honest no-JS view. */
+.no-js .vitals,
+.no-js .hero__check {
   display: none;
 }
 

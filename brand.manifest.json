@@ -59,11 +59,11 @@
       "bytes": 3636
     },
     {
-      "name": "logo-color.svg",
-      "file": "logo-color.4584ff092a16.svg",
+      "name": "logo-reverse.svg",
+      "file": "logo-reverse.a3f6eb0a39f2.svg",
       "mediaType": "image/svg+xml",
       "publish": true,
-      "sha256": "4584ff092a1661ba43ca785c309505ca07e4187dfb000d8733d2cbc6c6dba367",
+      "sha256": "a3f6eb0a39f2f426ee469b5e000e6dbefe26250cf3d38f30a491dd53c0cf6bb7",
       "bytes": 13055
     }
   ]

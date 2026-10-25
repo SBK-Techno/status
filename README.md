@@ -5,15 +5,17 @@ Public, static service status page for `status.ia.sbktechno.com`, hosted on GitH
 ## What this site is
 
 - A static GitHub Pages site intended for `https://status.ia.sbktechno.com`, served from the repository root.
-- Plain HTML, CSS, and JavaScript with no build step and no external runtime dependency: no framework, third-party font, remote image, analytics, or cookie.
+- Plain HTML, CSS, and JavaScript with no build step and no external runtime dependency: no framework, third-party font, remote image, analytics, cookie, or browser storage.
 - The platform host will publish `status.json` at the site root. The publisher is pending; until it exists, the committed seed reports a stale signal. This page reads only that public file. It never calls the private platform, the portal, or the AI gateway.
 - If the platform host is down, GitHub Pages still serves the page, its assets, and the last published `status.json`. The page shows `unknown` and a stale signal notice when the heartbeat is missing or expired.
-- French is the default language. English is available with the `FR | EN` switch. The choice is stored in `localStorage` under `sbk.status.lang`.
+- French is the default language. English is available with the `FR | EN` switch. The choice is kept in memory and can be shared as `?lang=en`; the page uses no browser storage.
 - This is not the documentation site. Documentation is private and served by Caddy.
 
 ## Brand and shared assets
 
 The site is an SBK-operated surface, so it uses the same web brand system as the operator portal and the private documentation. The brand repository's `assets.json` is the single owner of the logical web assets, and `assets/web/manifest.json` maps each logical name to a content-hashed file, digest, media type, and byte size. This repository never keeps its own asset list.
+
+The graphite header renders the brand layer's approved `logo-reverse.svg` unchanged, at its intrinsic 284x118 aspect ratio. The footer uses the published `icon-color.svg` on a `--sbk-text` plate: the brand blue measures 2.92:1 directly on the `#080A0F` canvas, 5.99:1 on the plate, and the plate separates from the canvas at 17.47:1. `cmd/genstatus` resolves the reverse lockup and the icon from the brand manifest, rejects the colour lockup on the status surface, and fails closed when the reverse lockup is missing.
 
 `templates/index.html` and `templates/404.html` are the source. They reference assets with `{{asset:<logical-name>}}` placeholders. `make brand` runs `cmd/genstatus` from the platform checkout, which:
 
@@ -32,7 +34,7 @@ The platform command `cmd/brandlint` is the design gate for every SBK-operated s
 
 The public board is a graphite surface (`data-theme="dark"`). It opens on a full-viewport panel with a text status word in the status colour, a monospaced check time, and a compact inline-SVG vitals instrument on the right. The instrument is decorative and `aria-hidden`; its arcs and counts mirror the component board, which is the accessible source of the same facts. The component rows and the incident timeline are separated by hairlines rather than cards. The theme colour is the dark canvas token, not a second literal.
 
-The status word, every component name, state, detail, and timestamp remain in the static HTML. With JavaScript disabled the page keeps that published snapshot, the `<noscript>` note, and a visible link to `status.json`; the language switch and any refresh claim stay hidden.
+The static HTML does not claim a status or a time it has not read. With JavaScript disabled the page says the published snapshot is not rendered, shows no status word or hard-coded timestamps, keeps the `<noscript>` note, and links `status.json`; the language switch and any refresh claim stay hidden.
 
 ## Hosting and DNS
 
@@ -165,6 +167,10 @@ No third-party action is used beyond `actions/checkout`.
 ## Security and privacy
 
 - `index.html` carries a strict CSP meta tag. JavaScript and CSS live in separate files, with no inline scripts or inline styles.
-- There are no secrets, cookies, analytics, or external assets. The `status.json` fetch uses `credentials: "omit"`.
+- There are no secrets, cookies, browser storage, analytics, service workers, beacons, or external assets. The `status.json` fetch uses `credentials: "omit"`.
 - Everything published in this repository and in `status.json` is public. Never put private platform data, client data, tokens, or internal URLs in the status file.
 - GitHub Pages does not allow arbitrary response headers. The CSP is delivered with a meta tag. Browsers ignore `frame-ancestors` in a meta CSP, so clickjacking protection must be enforced at the edge or hosting layer if that threat is in scope for this public page.
+
+### Deployment follow-up: response headers
+
+Serving the status page behind an edge that emits `Content-Security-Policy`, HSTS, and the other security headers remains a deployment follow-up. This task does not attempt to work around the GitHub Pages header limitation.

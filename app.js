@@ -3,7 +3,6 @@
 (() => {
   document.documentElement.classList.remove("no-js");
 
-  const LANG_KEY = "sbk.status.lang";
   const STATUS_URL = "status.json";
   const REFRESH_MS = 60_000;
   const FETCH_TIMEOUT_MS = 15_000;
@@ -36,7 +35,7 @@
       aboutLabel: "À propos",
       overallEyebrow: "État général",
       overallLead: "L'état du service est",
-      staticSummary: "Aucun signal de vie reçu. L'état du service n'est pas confirmé.",
+      staticSummary: "Lecture de l'état publié dans status.json.",
       unconfirmedSummary: "L'état du service n'est pas confirmé.",
       componentsTitle: "Composantes",
       incidentsTitle: "Incidents",
@@ -88,7 +87,7 @@
       aboutLabel: "About",
       overallEyebrow: "Overall status",
       overallLead: "Service status is",
-      staticSummary: "No heartbeat received. Service status is unconfirmed.",
+      staticSummary: "Reading the published status from status.json.",
       unconfirmedSummary: "Service status is unconfirmed.",
       componentsTitle: "Components",
       incidentsTitle: "Incidents",
@@ -232,11 +231,8 @@
   let refreshTimer = null;
 
   function readLang() {
-    try {
-      return window.localStorage.getItem(LANG_KEY) === "en" ? "en" : "fr";
-    } catch {
-      return "fr";
-    }
+    const requested = new URLSearchParams(window.location.search).get("lang");
+    return requested === "en" ? "en" : "fr";
   }
 
   function t(key) {
@@ -294,12 +290,17 @@
     return status;
   }
 
+  function setStamp(node, ms) {
+    if (!node) return;
+    const iso = isoStamp(ms);
+    if (node instanceof HTMLTimeElement) node.dateTime = iso;
+    node.title = iso;
+    node.textContent = formatStamp(ms);
+  }
+
   function createTime(ms) {
     const time = document.createElement("time");
-    const iso = isoStamp(ms);
-    time.dateTime = iso;
-    time.title = iso;
-    time.textContent = formatStamp(ms);
+    setStamp(time, ms);
     return time;
   }
 
@@ -400,8 +401,7 @@
     if (!els.snapshotTime) return;
     const generated = parseTimestamp(payload.generated_at);
     if (generated === null) return;
-    els.snapshotTime.dateTime = isoStamp(generated);
-    els.snapshotTime.textContent = formatStamp(generated);
+    setStamp(els.snapshotTime, generated);
   }
 
   function updateVitals(total, counts) {
@@ -608,9 +608,7 @@
 
   function renderChecked() {
     if (state.lastChecked === null) return;
-    if (!els.heroChecked) return;
-    els.heroChecked.dateTime = isoStamp(state.lastChecked);
-    els.heroChecked.textContent = formatStamp(state.lastChecked);
+    setStamp(els.heroChecked, state.lastChecked);
   }
 
   function renderAll() {
@@ -693,11 +691,10 @@
     if (lang !== "fr" && lang !== "en") return;
     if (lang !== state.lang) {
       state.lang = lang;
-      try {
-        window.localStorage.setItem(LANG_KEY, lang);
-      } catch {
-        // Storage can be unavailable in private browsing; the page still works.
-      }
+      const url = new URL(window.location.href);
+      if (lang === "en") url.searchParams.set("lang", "en");
+      else url.searchParams.delete("lang");
+      window.history.replaceState(null, "", url);
     }
     renderAll();
   }

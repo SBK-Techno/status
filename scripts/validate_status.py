@@ -53,6 +53,23 @@ REQUIRED_FILES = ("index.html", "404.html", "styles.css", "app.js")
 SITE_HOST = "status.ia.sbktechno.com"
 DARK_SELECTOR = ':root[data-theme="dark"]'
 BRAND_PROPERTY = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
+REVERSE_LOCKUP = "logo-reverse.svg"
+FOOTER_ICON = "icon-color.svg"
+SVG_TAG = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
+SVG_DIMENSION = re.compile(r'\b(width|height)="([0-9]+(?:\.[0-9]+)?)"')
+SVG_FILL = re.compile(r'fill="(#[0-9A-Fa-f]{6})"', re.IGNORECASE)
+CSS_BLOCK = re.compile(r"(?s)([^{}]+)\{([^{}]*)\}")
+HARDCODED_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+STORAGE_PATTERNS = (
+    (re.compile(r"\blocalStorage\b"), "localStorage"),
+    (re.compile(r"\bsessionStorage\b"), "sessionStorage"),
+    (re.compile(r"\bdocument\s*\.\s*cookie\b"), "document.cookie"),
+    (re.compile(r"\bindexedDB\b", re.IGNORECASE), "IndexedDB"),
+    (re.compile(r"\bcaches\s*\."), "Cache Storage"),
+    (re.compile(r"\bserviceWorker\b"), "service workers"),
+    (re.compile(r"\bsendBeacon\b"), "beacons"),
+    (re.compile(r"\bSet-Cookie\b", re.IGNORECASE), "Set-Cookie"),
+)
 FRENCH_LANG = re.compile(r"^fr(?:-[A-Za-z0-9]{1,8})*$")
 EVENT_HANDLER = re.compile(r"^on[a-z]+$")
 CSS_URL = re.compile(r"url\(\s*(['\"]?)([^'\")]+)\1\s*\)", re.IGNORECASE)
@@ -299,6 +316,28 @@ def brand_properties(stylesheet: str, *, dark: bool = False) -> dict[str, str]:
     }
 
 
+def srgb_channel(value: int) -> float:
+    value = value / 255
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def relative_luminance(colour: str) -> float:
+    red, green, blue = (int(colour[index : index + 2], 16) for index in (1, 3, 5))
+    return (
+        0.2126 * srgb_channel(red)
+        + 0.7152 * srgb_channel(green)
+        + 0.0722 * srgb_channel(blue)
+    )
+
+
+def contrast_ratio(foreground: str, background: str) -> float:
+    first, second = sorted(
+        (relative_luminance(foreground), relative_luminance(background)),
+        reverse=True,
+    )
+    return (first + 0.05) / (second + 0.05)
+
+
 def parse_page(text: str) -> Element:
     parser = PageParser()
     parser.feed(text)
@@ -358,6 +397,44 @@ def validate_css(name: str, text: str) -> list[str]:
     return errors
 
 
+def css_declarations(stylesheet: str, selector: str) -> dict[str, str]:
+    """Return the declarations of one selector, merged across duplicate blocks."""
+    declarations: dict[str, str] = {}
+    for match in CSS_BLOCK.finditer(stylesheet):
+        if selector not in match.group(1):
+            continue
+        for declaration in match.group(2).split(";"):
+            name, separator, value = declaration.partition(":")
+            if separator:
+                declarations[name.strip()] = value.strip()
+    return declarations
+
+
+def svg_dimensions(path: Path) -> tuple[float, float] | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    tag = SVG_TAG.search(text)
+    if tag is None:
+        return None
+    values = dict(SVG_DIMENSION.findall(tag.group(0)))
+    if "width" not in values or "height" not in values:
+        return None
+    width, height = float(values["width"]), float(values["height"])
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def svg_fills(path: Path) -> set[str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    return {match.upper() for match in SVG_FILL.findall(text)}
+
+
 def local_site_path(href: str) -> str | None:
     value = href.strip()
     if not value or value.startswith("#"):
@@ -373,6 +450,71 @@ def local_site_path(href: str) -> str | None:
         path = value.split("?", 1)[0].split("#", 1)[0]
     path = path.lstrip("/")
     return path or None
+
+
+def validate_no_storage(sources: dict[str, str]) -> list[str]:
+    """Reject every browser storage, cookie, worker, and beacon API."""
+    errors: list[str] = []
+    for name, text in sources.items():
+        for pattern, label in STORAGE_PATTERNS:
+            if pattern.search(text):
+                errors.append(
+                    f"{name}: {label} is not allowed by the public no-storage contract"
+                )
+    return errors
+
+
+def validate_no_js_snapshot(name: str, text: str) -> list[str]:
+    """The static page must not present a status or time it cannot have read."""
+    errors: list[str] = []
+    page = parse_page(text)
+    if next(page.find_all("time"), None) is not None:
+        errors.append(
+            f"{name}: the static snapshot must not hard-code <time> elements; "
+            "times come from status.json only after JavaScript reads it"
+        )
+    if HARDCODED_TIMESTAMP.search(text):
+        errors.append(
+            f"{name}: the static snapshot must not hard-code a timestamp"
+        )
+
+    status_word = next(page.find_all(element_id="hero-status-text"), None)
+    if status_word is not None:
+        word = status_word.text().strip().lower()
+        if "non disponible" not in word and "non rendu" not in word:
+            errors.append(
+                f"{name}: the no-JS hero must say the snapshot is not rendered, "
+                "not present a status word"
+            )
+
+    summary = next(page.find_all(element_id="overall-summary"), None)
+    if summary is not None and "javascript" not in summary.text().lower():
+        errors.append(
+            f"{name}: the no-JS summary must say the published data is not "
+            "rendered without JavaScript"
+        )
+
+    components = next(page.find_all("ul", element_id="components-list"), None)
+    rows = [
+        child
+        for child in (components.children if components is not None else [])
+        if isinstance(child, Element) and child.tag == "li"
+    ]
+    for index, row in enumerate(rows, 1):
+        detail = next(row.find_all("p", class_name="component-detail"), None)
+        if detail is not None and "javascript" not in detail.text().lower():
+            errors.append(
+                f"{name}: component row {index} must say its state is not "
+                "rendered without JavaScript"
+            )
+
+    incidents = next(page.find_all(element_id="incidents-empty"), None)
+    if incidents is not None and "javascript" not in incidents.text().lower():
+        errors.append(
+            f"{name}: the no-JS incident note must say incidents are not "
+            "rendered without JavaScript"
+        )
+    return errors
 
 
 def validate_page(
@@ -399,6 +541,11 @@ def validate_page(
         if html.attrs.get("data-theme", "").strip().lower() != "dark":
             errors.append(
                 f'{name}: <html> must declare data-theme="dark" for the graphite surface'
+            )
+        if "no-js" not in classes(html):
+            errors.append(
+                f'{name}: <html> must declare class="no-js" so the static '
+                "snapshot is the default and JavaScript only enhances it"
             )
 
     mains = list(root.find_all("main"))
@@ -458,13 +605,8 @@ def validate_page(
                 errors.append(
                     f"{name}: the header mark must declare numeric width and height"
                 )
-            elif not 32 <= int(height) <= 48:
-                errors.append(
-                    f"{name}: the header mark height {height!r} must be between "
-                    "32 and 48 pixels"
-                )
-            elif int(width) <= 0:
-                errors.append(f"{name}: the header mark width must be positive")
+            elif int(height) <= 0 or int(width) <= 0:
+                errors.append(f"{name}: the header mark dimensions must be positive")
 
     skip_links = [node for node in root.find_all("a") if classes(node) & {"sbk-skip", "skip"}]
     if not skip_links:
@@ -626,8 +768,11 @@ def validate_page(
                         f"{name}: component row {index} has invalid status "
                         f"{pill.attrs.get('data-status')!r}"
                     )
-                if next(row.find_all("time"), None) is None:
-                    errors.append(f"{name}: component row {index} needs a <time> timestamp")
+                meta = next(row.find_all("p", class_name="component-meta"), None)
+                if meta is None or not meta.text().strip():
+                    errors.append(
+                        f"{name}: component row {index} needs a snapshot note"
+                    )
 
         component_count = next(root.find_all(element_id="components-count"), None)
         if component_count is None or not component_count.text().strip():
@@ -704,17 +849,12 @@ def load_document(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def brand_theme_color(root: Path) -> tuple[str | None, list[str]]:
-    """Read the dark canvas colour from the published brand stylesheet.
-
-    The browser chrome colour is a consequence of the surface mode, so its
-    owner is the brand layer, not a second literal in the page.
-    """
-    manifest_path = root / "brand.manifest.json"
-    if not manifest_path.is_file():
+def load_brand_manifest(root: Path) -> tuple[dict | None, list[str]]:
+    path = root / "brand.manifest.json"
+    if not path.is_file():
         return None, ["brand.manifest.json is missing"]
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return None, [f"brand.manifest.json cannot be read: {exc}"]
     if not isinstance(manifest, dict) or manifest.get("version") != 1:
@@ -722,10 +862,15 @@ def brand_theme_color(root: Path) -> tuple[str | None, list[str]]:
     assets = manifest.get("assets")
     if not isinstance(assets, list):
         return None, ["brand.manifest.json assets must be a list"]
+    return manifest, []
+
+
+def brand_variables(root: Path, manifest: dict) -> tuple[dict[str, str], list[str]]:
+    """Read the dark-mode tokens from the published brand stylesheet."""
     brand = next(
         (
             asset
-            for asset in assets
+            for asset in manifest["assets"]
             if isinstance(asset, dict)
             and asset.get("name") == "brand.css"
             and asset.get("publish")
@@ -733,27 +878,246 @@ def brand_theme_color(root: Path) -> tuple[str | None, list[str]]:
         None,
     )
     if brand is None:
-        return None, ["brand.manifest.json must publish brand.css"]
+        return {}, ["brand.manifest.json must publish brand.css"]
     filename = brand.get("file")
     if not isinstance(filename, str) or not filename.strip():
-        return None, ["brand.manifest.json brand.css entry has no file"]
+        return {}, ["brand.manifest.json brand.css entry has no file"]
     stylesheet_path = root / filename
     if not stylesheet_path.is_file():
-        return None, [f"brand.manifest.json: brand.css file {filename!r} is missing"]
+        return {}, [f"brand.manifest.json: brand.css file {filename!r} is missing"]
     try:
         stylesheet = stylesheet_path.read_text(encoding="utf-8")
     except OSError as exc:
-        return None, [f"{filename}: cannot be read: {exc}"]
-    value = brand_properties(stylesheet, dark=True).get("--sbk-canvas")
-    if value is None:
-        return None, [f"{filename}: must declare --sbk-canvas in the dark theme"]
-    return value, []
+        return {}, [f"{filename}: cannot be read: {exc}"]
+    return brand_properties(stylesheet, dark=True), []
+
+
+def validate_brand_marks(
+    root: Path,
+    pages: dict[str, str],
+    manifest: dict,
+    stylesheets: dict[str, str],
+    canvas: str,
+    plate: str | None,
+) -> list[str]:
+    """Assert the graphite marks, their geometry, and their measured contrast."""
+    errors: list[str] = []
+    assets = {
+        asset.get("name"): asset
+        for asset in manifest["assets"]
+        if isinstance(asset, dict)
+    }
+    reverse = assets.get(REVERSE_LOCKUP)
+    footer = assets.get(FOOTER_ICON)
+    if reverse is None or not reverse.get("publish"):
+        errors.append(
+            f"brand.manifest.json must publish {REVERSE_LOCKUP} for the graphite header"
+        )
+        reverse = None
+    if footer is None or not footer.get("publish"):
+        errors.append(
+            f"brand.manifest.json must publish {FOOTER_ICON} for the graphite footer"
+        )
+        footer = None
+
+    reverse_file = reverse.get("file") if reverse else None
+    footer_file = footer.get("file") if footer else None
+    reverse_dimensions: tuple[float, float] | None = None
+    if isinstance(reverse_file, str) and reverse_file.strip():
+        reverse_dimensions = svg_dimensions(root / reverse_file)
+        if reverse_dimensions is None:
+            errors.append(
+                f"{reverse_file}: cannot read the reverse lockup dimensions"
+            )
+    if plate is None:
+        errors.append(
+            "brand.css: must declare --sbk-text in the dark theme for the "
+            "footer mark plate"
+        )
+    else:
+        plate_contrast = contrast_ratio(plate, canvas)
+        if plate_contrast < 3.0:
+            errors.append(
+                f"brand.css: the footer mark plate {plate} measures "
+                f"{plate_contrast:.2f}:1 on {canvas}, below the 3:1 separation minimum"
+            )
+    footer_surface = plate or canvas
+    if isinstance(footer_file, str) and footer_file.strip():
+        fills = svg_fills(root / footer_file)
+        if not fills:
+            errors.append(f"{footer_file}: footer icon declares no fill colour")
+        for fill in sorted(fills):
+            measured = contrast_ratio(fill, footer_surface)
+            if measured < 4.5:
+                errors.append(
+                    f"{footer_file}: fill {fill} measures {measured:.2f}:1 on "
+                    f"the {footer_surface} plate, below the 4.5:1 "
+                    "meaningful-graphic minimum"
+                )
+    if isinstance(reverse_file, str) and reverse_file.strip():
+        fills = svg_fills(root / reverse_file)
+        if "#FFFFFF" not in fills:
+            errors.append(
+                f"{reverse_file}: reverse lockup must keep its white wordmark"
+            )
+        else:
+            measured = contrast_ratio("#FFFFFF", canvas)
+            if measured < 4.5:
+                errors.append(
+                    f"{reverse_file}: white wordmark measures {measured:.2f}:1 on "
+                    f"{canvas}, below the 4.5:1 minimum"
+                )
+
+    stylesheet = stylesheets.get("styles.css", "")
+    header = css_declarations(stylesheet, ".status-brand .status-brand__mark")
+    if not header:
+        errors.append(
+            "styles.css: .status-brand .status-brand__mark must size the header mark"
+        )
+    else:
+        if header.get("width") != "auto":
+            errors.append(
+                "styles.css: the header mark must keep width: auto so the "
+                "reverse lockup retains its intrinsic aspect ratio"
+            )
+        if header.get("height") != "var(--status-mark-height)":
+            errors.append(
+                "styles.css: the header mark height must come from "
+                "var(--status-mark-height)"
+            )
+        if "filter" in header:
+            errors.append(
+                "styles.css: the header mark must not be recoloured with a filter; "
+                "render the published reverse lockup unchanged"
+            )
+    footer_rule = css_declarations(stylesheet, ".status-footer__mark")
+    if not footer_rule:
+        errors.append("styles.css: .status-footer__mark must size the footer mark")
+    else:
+        if "filter" in footer_rule:
+            errors.append(
+                "styles.css: the footer mark must not be recoloured with a filter"
+            )
+        if footer_rule.get("background") != "var(--sbk-text)":
+            errors.append(
+                "styles.css: the footer mark must sit on the var(--sbk-text) "
+                "plate so the brand blue meets the contrast minimum"
+            )
+        if footer_rule.get("box-sizing") != "content-box":
+            errors.append(
+                "styles.css: the footer mark plate must use box-sizing: content-box "
+                "so the 16px icon keeps its geometry"
+            )
+        try:
+            opacity = float(footer_rule.get("opacity", "1"))
+        except ValueError:
+            opacity = 1
+        if opacity < 1:
+            errors.append(
+                "styles.css: the footer mark must not be faded; its contrast is "
+                "measured at full opacity"
+            )
+    mark_height = css_declarations(stylesheet, ":root").get(
+        "--status-mark-height", ""
+    )
+    height_match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)rem", mark_height)
+    if height_match is None or not 2 <= float(height_match.group(1)) <= 3:
+        errors.append(
+            "styles.css: --status-mark-height must be between 2rem and 3rem"
+        )
+
+    for name, text in pages.items():
+        page = parse_page(text)
+        brand_link = next(
+            (node for node in page.find_all("a") if "sbk-brand" in classes(node)),
+            None,
+        )
+        if brand_link is None:
+            continue
+        if not brand_link.attrs.get("aria-label", "").strip():
+            errors.append(f"{name}: the header brand link needs an accessible name")
+        mark = next(brand_link.find_all("img"), None)
+        if mark is None:
+            continue
+        if isinstance(reverse_file, str):
+            expected = "/" + reverse_file
+            if mark.attrs.get("src", "").strip() != expected:
+                errors.append(
+                    f"{name}: the header mark must reference the reverse lockup "
+                    f"{expected!r}, not a colour or recoloured mark"
+                )
+        if not mark.attrs.get("alt", "").strip():
+            errors.append(f"{name}: the header mark must preserve its text alternative")
+        width = mark.attrs.get("width", "").strip()
+        height = mark.attrs.get("height", "").strip()
+        if width.isdigit() and height.isdigit() and reverse_dimensions is not None:
+            declared = int(width) / int(height)
+            intrinsic = reverse_dimensions[0] / reverse_dimensions[1]
+            if abs(declared - intrinsic) > 0.001:
+                errors.append(
+                    f"{name}: the header mark declares {width}x{height}, which "
+                    f"distorts the reverse lockup aspect ratio "
+                    f"{reverse_dimensions[0]:g}x{reverse_dimensions[1]:g}"
+                )
+        footer_mark = next(
+            page.find_all("img", class_name="status-footer__mark"), None
+        )
+        if footer_mark is None:
+            errors.append(f"{name}: missing the footer mark")
+        else:
+            if isinstance(footer_file, str):
+                expected = "/" + footer_file
+                if footer_mark.attrs.get("src", "").strip() != expected:
+                    errors.append(
+                        f"{name}: the footer mark must reference the one-colour "
+                        f"icon {expected!r}"
+                    )
+            if footer_mark.attrs.get("alt", "").strip():
+                errors.append(
+                    f'{name}: the footer mark must use alt="" because the '
+                    "attribution text is the accessible source"
+                )
+    return errors
+
+
+def validate_manifest_assets(
+    root: Path,
+    manifest: dict,
+    pages: dict[str, str],
+    stylesheets: dict[str, str],
+) -> list[str]:
+    """Every published asset must exist locally and be referenced locally."""
+    errors: list[str] = []
+    references = list(pages.values()) + list(stylesheets.values())
+    for asset in manifest["assets"]:
+        if not isinstance(asset, dict) or not asset.get("publish"):
+            continue
+        filename = asset.get("file")
+        if not isinstance(filename, str) or not filename.strip():
+            errors.append(
+                f"brand.manifest.json: published asset {asset.get('name')!r} has no file"
+            )
+            continue
+        if not (root / filename).is_file():
+            errors.append(f"{filename}: published brand asset is missing")
+        if not any(filename in text for text in references):
+            errors.append(
+                f"{filename}: published but not referenced by a page or stylesheet"
+            )
+    return errors
 
 
 def validate_site(root: Path) -> list[str]:
     errors = validate_document(load_document(root / "status.json"))
-    theme_color, brand_errors = brand_theme_color(root)
-    errors.extend(brand_errors)
+    manifest, manifest_errors = load_brand_manifest(root)
+    errors.extend(manifest_errors)
+    brand_colours: dict[str, str] = {}
+    if manifest is not None:
+        brand_colours, brand_errors = brand_variables(root, manifest)
+        errors.extend(brand_errors)
+    theme_color = brand_colours.get("--sbk-canvas")
+    if manifest is not None and theme_color is None:
+        errors.append("brand.css: must declare --sbk-canvas in the dark theme")
     cname = root / "CNAME"
     if not cname.is_file():
         errors.append("CNAME is missing")
@@ -786,7 +1150,7 @@ def validate_site(root: Path) -> list[str]:
             )
         )
 
-    seen_stylesheets: set[str] = set()
+    stylesheets: dict[str, str] = {}
     for name, text in pages.items():
         page_root = parse_page(text)
         for link in page_root.find_all("link"):
@@ -795,9 +1159,8 @@ def validate_site(root: Path) -> list[str]:
                 continue
             href = link.attrs.get("href", "").strip()
             local = local_site_path(href)
-            if local is None or local in seen_stylesheets:
+            if local is None or local in stylesheets:
                 continue
-            seen_stylesheets.add(local)
             path = root / local
             if not path.is_file():
                 errors.append(f"{name}: linked stylesheet {href!r} is missing")
@@ -807,11 +1170,34 @@ def validate_site(root: Path) -> list[str]:
             except OSError as exc:
                 errors.append(f"{local}: cannot be read: {exc}")
                 continue
+            stylesheets[local] = css_text
             errors.extend(validate_css(local, css_text))
 
-    app = root / "app.js"
-    if app.is_file() and "document.cookie" in app.read_text(encoding="utf-8"):
-        errors.append("app.js must not read or write cookies")
+    if manifest is not None and theme_color is not None:
+        errors.extend(
+            validate_brand_marks(
+                root,
+                pages,
+                manifest,
+                stylesheets,
+                theme_color,
+                brand_colours.get("--sbk-text"),
+            )
+        )
+        errors.extend(validate_manifest_assets(root, manifest, pages, stylesheets))
+
+    if "index.html" in pages:
+        errors.extend(validate_no_js_snapshot("index.html", pages["index.html"]))
+    sources: dict[str, str] = dict(pages)
+    sources.update(stylesheets)
+    for name in ("app.js", "templates/index.html", "templates/404.html"):
+        path = root / name
+        if path.is_file():
+            try:
+                sources[name] = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                errors.append(f"{name}: cannot be read: {exc}")
+    errors.extend(validate_no_storage(sources))
     return errors
 
 
