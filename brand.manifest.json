@@ -36,11 +36,11 @@
     },
     {
       "name": "brand.css",
-      "file": "brand.c0268e99a0fe.css",
+      "file": "brand.a423189168d5.css",
       "mediaType": "text/css; charset=utf-8",
       "publish": true,
-      "sha256": "c0268e99a0febfad7eac2667ce0a86599d55df2a9511fdf23b507d6a046a7395",
-      "bytes": 13395
+      "sha256": "a423189168d510b64c12c5f1a45836cd159b76a7df23bc72a023f8f9c6af8d4b",
+      "bytes": 15318
     },
     {
       "name": "favicon.ico",
@@ -49,6 +49,30 @@
       "publish": true,
       "sha256": "a92e4a164eb7004b8f4d840a670a74d9225980b5169ef44ab73199b996a9e0a3",
       "bytes": 8168
+    },
+    {
+      "name": "fraunces-soft100-var.woff2",
+      "file": "fraunces-soft100-var.b8e2ade5f69c.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "b8e2ade5f69c869852fe204b189f63b1673ec50af6c6bc42f2c5ca563d653462",
+      "bytes": 68000
+    },
+    {
+      "name": "ibm-plex-mono-400.woff2",
+      "file": "ibm-plex-mono-400.e7383c9b2d82.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "e7383c9b2d82a6f22972ca6f2d3157ddb87491eb3d365c938c0008379475bdac",
+      "bytes": 15188
+    },
+    {
+      "name": "ibm-plex-mono-500.woff2",
+      "file": "ibm-plex-mono-500.8e00626281d5.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "8e00626281d5bb30ac2fffe48e63f5306a2796c8c5dc02b5229ee73fb168937e",
+      "bytes": 15504
     },
     {
       "name": "icon-color.svg",
