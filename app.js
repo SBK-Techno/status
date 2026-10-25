@@ -6,7 +6,6 @@
   const LANG_KEY = "sbk.status.lang";
   const STATUS_URL = "status.json";
   const REFRESH_MS = 60_000;
-  const CLOCK_MS = 30_000;
   const FETCH_TIMEOUT_MS = 15_000;
   const MAX_AGE_MS = 15 * 60_000;
 
@@ -34,11 +33,27 @@
       pageLede:
         "L'état des services offerts aux clients et à l'équipe de SBK Techno, publié depuis la plateforme.",
       pageMetaStatic: "Page statique indépendante",
+      aboutLabel: "À propos",
       overallEyebrow: "État général",
-      lastUpdate: "Dernière mise à jour",
+      overallLead: "L'état du service est",
+      staticSummary: "Aucun signal de vie reçu. L'état du service n'est pas confirmé.",
+      unconfirmedSummary: "L'état du service n'est pas confirmé.",
       componentsTitle: "Composantes",
       incidentsTitle: "Incidents",
-      unconfirmedSummary: "L'état du service n'est pas confirmé.",
+      componentsTracked: "suivies",
+      incidentsNone: "Aucun",
+      vitalsComponents: "composantes",
+      vitalOperational: "Opérationnelles",
+      vitalDegraded: "Dégradées",
+      vitalOutage: "Interrompues",
+      vitalMaintenance: "Maintenance",
+      vitalUnknown: "Inconnues",
+      vitalSignals: "Signaux reçus",
+      heroChecked: "Vérifié",
+      sourceLabel: "Source",
+      footerProduct: "Exploité par SBK Techno",
+      footerSnapshot: "Instantané",
+      footerSource: "Fichier publié",
       never: "Jamais",
       unavailable: "Indisponible",
       staleTitle: "Signal périmé",
@@ -51,22 +66,13 @@
         "Le fichier status.json n'a pas pu être chargé. Vérifiez votre connexion, puis réessayez. Les dernières données reçues restent affichées lorsqu'elles existent.",
       retry: "Réessayer",
       noComponents: "Aucune composante déclarée.",
-      noIncidents: "Aucun incident déclaré.",
+      noIncidents: "Aucun incident déclaré. Le journal est vide pour cet instantané.",
       untitledIncident: "Incident sans titre",
-      staleFlag: "Signal périmé",
       componentSnapshot: "Instantané",
       componentChecked: "Vérifié",
       componentObserved: "État au",
       incidentStarted: "Début",
       incidentUpdated: "Mis à jour",
-      checkedLabel: "Dernière vérification",
-      checkedNever: "Pas encore vérifié",
-      refreshNote: "Actualisation automatique toutes les 60 secondes.",
-      footerSource: "Fichier publié",
-      footerBlurb:
-        "Page d'état publique de SBK Techno. Les données sont publiées par la plateforme sous forme de fichier statique.",
-      footerPrivacy: "Aucun cookie, aucun outil de mesure, aucune ressource externe.",
-      footerHost: "Hébergé sur GitHub Pages",
     },
     en: {
       docTitle: "Service status · SBK Techno",
@@ -79,11 +85,27 @@
       pageLede:
         "The status of the services provided to SBK Techno clients and staff, published from the platform.",
       pageMetaStatic: "Independent static page",
+      aboutLabel: "About",
       overallEyebrow: "Overall status",
-      lastUpdate: "Last updated",
+      overallLead: "Service status is",
+      staticSummary: "No heartbeat received. Service status is unconfirmed.",
+      unconfirmedSummary: "Service status is unconfirmed.",
       componentsTitle: "Components",
       incidentsTitle: "Incidents",
-      unconfirmedSummary: "Service status is unconfirmed.",
+      componentsTracked: "tracked",
+      incidentsNone: "None",
+      vitalsComponents: "components",
+      vitalOperational: "Operational",
+      vitalDegraded: "Degraded",
+      vitalOutage: "Interrupted",
+      vitalMaintenance: "Maintenance",
+      vitalUnknown: "Unknown",
+      vitalSignals: "Signals received",
+      heroChecked: "Checked",
+      sourceLabel: "Source",
+      footerProduct: "Operated by SBK Techno",
+      footerSnapshot: "Snapshot",
+      footerSource: "Published file",
       never: "Never",
       unavailable: "Unavailable",
       staleTitle: "Stale signal",
@@ -96,22 +118,13 @@
         "The status.json file could not be loaded. Check your connection and try again. The last received data remains visible when available.",
       retry: "Try again",
       noComponents: "No components declared.",
-      noIncidents: "No declared incidents.",
+      noIncidents: "No declared incidents. The journal is empty for this snapshot.",
       untitledIncident: "Untitled incident",
-      staleFlag: "Stale signal",
       componentSnapshot: "Snapshot",
       componentChecked: "Checked",
       componentObserved: "State at",
       incidentStarted: "Started",
       incidentUpdated: "Updated",
-      checkedLabel: "Last checked",
-      checkedNever: "Not checked yet",
-      refreshNote: "Automatically refreshed every 60 seconds.",
-      footerSource: "Published file",
-      footerBlurb:
-        "Public status page for SBK Techno. Data is published by the platform as a static file.",
-      footerPrivacy: "No cookies, no analytics, no external assets.",
-      footerHost: "Hosted on GitHub Pages",
     },
   };
 
@@ -134,22 +147,22 @@
     },
   };
 
-  const OVERALL_LABELS = {
+  const OVERALL_WORDS = {
     fr: {
-      operational: "Opérationnel",
-      degraded: "Service dégradé",
-      partial_outage: "Panne partielle",
-      major_outage: "Panne majeure",
-      maintenance: "Maintenance en cours",
-      unknown: "État inconnu",
+      operational: "opérationnel",
+      degraded: "dégradé",
+      partial_outage: "partiellement en panne",
+      major_outage: "en panne",
+      maintenance: "en maintenance",
+      unknown: "inconnu",
     },
     en: {
-      operational: "Operational",
-      degraded: "Degraded service",
-      partial_outage: "Partial outage",
-      major_outage: "Major outage",
-      maintenance: "Maintenance in progress",
-      unknown: "Status unknown",
+      operational: "operational",
+      degraded: "degraded",
+      partial_outage: "partially down",
+      major_outage: "down",
+      maintenance: "under maintenance",
+      unknown: "unknown",
     },
   };
 
@@ -168,28 +181,14 @@
     },
   };
 
-  const FR_UNITS = {
-    second: ["seconde", "secondes"],
-    minute: ["minute", "minutes"],
-    hour: ["heure", "heures"],
-    day: ["jour", "jours"],
-  };
-
-  const EN_UNITS = {
-    second: ["second", "seconds"],
-    minute: ["minute", "minutes"],
-    hour: ["hour", "hours"],
-    day: ["day", "days"],
-  };
-
-  const RTF_CACHE = {};
+  const VITAL_KEYS = ["operational", "degraded", "outage", "maintenance", "unknown"];
+  const VITAL_GAP = 0.8;
 
   const state = {
     lang: readLang(),
     data: null,
     hasError: false,
     lastChecked: null,
-    stale: false,
     fetching: false,
   };
 
@@ -198,23 +197,39 @@
     metaDescription: document.querySelector('meta[name="description"]'),
     langButtons: Array.from(document.querySelectorAll("[data-lang]")),
     hero: document.getElementById("hero"),
-    heroIcon: document.querySelector("#hero .status-icon use"),
     heroStatus: document.getElementById("hero-status-text"),
     summary: document.getElementById("overall-summary"),
-    heroUpdated: document.getElementById("hero-updated-value"),
+    heroChecked: document.getElementById("hero-checked"),
+    snapshotTime: document.getElementById("snapshot-time"),
     staleBanner: document.getElementById("stale-banner"),
     staleText: document.getElementById("stale-text"),
     errorBanner: document.getElementById("fetch-error"),
     retry: document.getElementById("retry-button"),
     componentsList: document.getElementById("components-list"),
     componentsEmpty: document.getElementById("components-empty"),
+    componentsCount: document.getElementById("components-count"),
     incidentsList: document.getElementById("incidents-list"),
     incidentsEmpty: document.getElementById("incidents-empty"),
-    checked: document.getElementById("checked-value"),
+    incidentsCount: document.getElementById("incidents-count"),
+    vitals: document.getElementById("vitals"),
+    vitalsTotal: document.getElementById("vitals-total"),
+    vitalsNumber: document.getElementById("vitals-number"),
+    vitalsSignal: document.getElementById("vitals-signal"),
+    vitalsScale: document.getElementById("vitals-scale"),
+    vitalsSignals: document.getElementById("vitals-signals"),
+    vitalsSignalTotal: document.getElementById("vitals-signal-total"),
+    vitalSegments: new Map(),
+    vitalCounts: new Map(),
   };
 
+  for (const node of document.querySelectorAll(".vitals__segment")) {
+    els.vitalSegments.set(node.getAttribute("data-vital"), node);
+  }
+  for (const node of document.querySelectorAll(".vitals__count")) {
+    els.vitalCounts.set(node.getAttribute("data-count"), node);
+  }
+
   let refreshTimer = null;
-  let clockTimer = null;
 
   function readLang() {
     try {
@@ -254,64 +269,29 @@
   }
 
   function isoStamp(ms) {
-    const iso = new Date(ms).toISOString();
-    return iso.endsWith(".000Z") ? iso.slice(0, -5) + "Z" : iso;
+    const wholeSeconds = Math.floor(ms / 1000) * 1000;
+    return new Date(wholeSeconds).toISOString().slice(0, -5) + "Z";
+  }
+
+  function pad2(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function formatStamp(ms) {
+    const date = new Date(ms);
+    return (
+      `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}` +
+      ` · ${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())} UTC`
+    );
   }
 
   function normalizeStatus(value) {
     return STATUS_SET.has(value) ? value : "unknown";
   }
 
-  function relativeFormatter() {
-    if (Object.prototype.hasOwnProperty.call(RTF_CACHE, state.lang)) {
-      return RTF_CACHE[state.lang];
-    }
-    let formatter = null;
-    try {
-      formatter = new Intl.RelativeTimeFormat(state.lang === "fr" ? "fr-CA" : "en-CA", {
-        numeric: "auto",
-        style: "long",
-      });
-    } catch {
-      formatter = null;
-    }
-    RTF_CACHE[state.lang] = formatter;
-    return formatter;
-  }
-
-  function formatRelative(ms) {
-    const diff = Math.max(0, Date.now() - ms);
-    let value;
-    let unit;
-
-    if (diff < 45_000) {
-      value = 0;
-      unit = "second";
-    } else if (diff < 59.5 * 60_000) {
-      value = -Math.max(1, Math.round(diff / 60_000));
-      unit = "minute";
-    } else if (diff < 23.5 * 3_600_000) {
-      value = -Math.max(1, Math.round(diff / 3_600_000));
-      unit = "hour";
-    } else {
-      value = -Math.max(1, Math.round(diff / 86_400_000));
-      unit = "day";
-    }
-
-    const formatter = relativeFormatter();
-    if (formatter) {
-      try {
-        return formatter.format(value, unit);
-      } catch {
-        // Fall through to the manual form.
-      }
-    }
-
-    if (value === 0) return state.lang === "fr" ? "à l'instant" : "just now";
-    const count = Math.abs(value);
-    const units = state.lang === "fr" ? FR_UNITS : EN_UNITS;
-    const label = units[unit][count === 1 ? 0 : 1];
-    return state.lang === "fr" ? `il y a ${count} ${label}` : `${count} ${label} ago`;
+  function vitalKey(status) {
+    if (status === "partial_outage" || status === "major_outage") return "outage";
+    return status;
   }
 
   function createTime(ms) {
@@ -319,16 +299,8 @@
     const iso = isoStamp(ms);
     time.dateTime = iso;
     time.title = iso;
-    time.dataset.ts = String(ms);
-    time.textContent = formatRelative(ms);
+    time.textContent = formatStamp(ms);
     return time;
-  }
-
-  function updateTimes() {
-    for (const node of document.querySelectorAll("time[data-ts]")) {
-      const ms = Number(node.dataset.ts);
-      if (Number.isFinite(ms)) node.textContent = formatRelative(ms);
-    }
   }
 
   function applyStaticTranslations() {
@@ -394,17 +366,6 @@
     return pill;
   }
 
-  function renderUpdated(container, ms, fallbackKey) {
-    container.replaceChildren();
-    if (ms === null) {
-      const fallback = document.createElement("span");
-      fallback.textContent = t(fallbackKey);
-      container.append(fallback);
-      return;
-    }
-    container.append(createTime(ms));
-  }
-
   function renderErrorBanner() {
     els.errorBanner.hidden = !state.hasError;
   }
@@ -422,33 +383,88 @@
     els.staleBanner.hidden = false;
   }
 
+  function renderStaticState() {
+    els.hero.setAttribute("data-status", "unknown");
+    setText(els.heroStatus, OVERALL_WORDS[state.lang].unknown);
+    setText(els.summary, t("staticSummary"));
+  }
+
   function renderHero(payload, freshness) {
     const status = freshness.stale ? "unknown" : normalizeStatus(payload.overall);
     els.hero.setAttribute("data-status", status);
-    els.heroIcon.setAttribute("href", "#icon-" + status);
-    setText(els.heroStatus, OVERALL_LABELS[state.lang][status]);
+    setText(els.heroStatus, OVERALL_WORDS[state.lang][status]);
     setText(els.summary, pick(payload, "summary") || t("unconfirmedSummary"));
-
-    const updated = freshness.stale
-      ? freshness.generated
-      : parseTimestamp(payload.generated_at);
-    renderUpdated(els.heroUpdated, updated, "never");
   }
 
-  function renderComponents(payload, stale) {
+  function renderSnapshot(payload) {
+    if (!els.snapshotTime) return;
+    const generated = parseTimestamp(payload.generated_at);
+    if (generated === null) return;
+    els.snapshotTime.dateTime = isoStamp(generated);
+    els.snapshotTime.textContent = formatStamp(generated);
+  }
+
+  function updateVitals(total, counts) {
+    els.vitals.setAttribute("data-total", String(total));
+    setText(els.vitalsTotal, pad2(total));
+    setText(els.vitalsNumber, pad2(total));
+
+    if (els.vitalsScale) {
+      const gap = total > 0 ? `${VITAL_GAP} ${100 / total - VITAL_GAP}` : "0 100";
+      els.vitalsScale.setAttribute("stroke-dasharray", gap);
+    }
+
+    let offset = 0;
+    for (const key of VITAL_KEYS) {
+      const count = counts[key] || 0;
+      const length = total > 0 ? (count / total) * 100 : 0;
+      const segment = els.vitalSegments.get(key);
+      if (segment) {
+        segment.setAttribute("stroke-dasharray", `${length} 100`);
+        segment.setAttribute("stroke-dashoffset", String(-offset));
+      }
+      const label = els.vitalCounts.get(key);
+      if (label) label.textContent = String(count);
+      offset += length;
+    }
+
+    const signals = Math.max(0, total - (counts.unknown || 0));
+    const signalLength = total > 0 ? (signals / total) * 100 : 0;
+    if (els.vitalsSignal) {
+      els.vitalsSignal.setAttribute("stroke-dasharray", `${signalLength} 100`);
+      els.vitalsSignal.setAttribute("stroke-dashoffset", "0");
+    }
+    setText(els.vitalsSignals, String(signals));
+    setText(els.vitalsSignalTotal, String(total));
+  }
+
+  function renderComponents(payload) {
     els.componentsList.replaceChildren();
     const generated = parseTimestamp(payload.generated_at);
     const checked = state.lastChecked;
+    const counts = {
+      operational: 0,
+      degraded: 0,
+      outage: 0,
+      maintenance: 0,
+      unknown: 0,
+    };
     let rendered = 0;
 
     for (const component of payload.components) {
       if (!component || typeof component !== "object") continue;
       const status = normalizeStatus(component.status);
+      counts[vitalKey(status)] += 1;
+      rendered += 1;
+
       const item = document.createElement("li");
       item.className = "component";
+      item.setAttribute("data-status", status);
 
-      const main = document.createElement("div");
-      main.className = "component-main";
+      const index = document.createElement("span");
+      index.className = "component-index";
+      index.setAttribute("aria-hidden", "true");
+      index.textContent = pad2(rendered);
 
       const name = document.createElement("h3");
       name.className = "component-name";
@@ -457,14 +473,9 @@
         (nonEmpty(component.id) ? component.id : t("unavailable"));
 
       const detailText = pick(component, "detail");
-      if (detailText) {
-        const detail = document.createElement("p");
-        detail.className = "component-detail";
-        detail.textContent = detailText;
-        main.append(name, detail);
-      } else {
-        main.append(name);
-      }
+      const detail = document.createElement("p");
+      detail.className = "component-detail";
+      detail.textContent = detailText || t("unavailable");
 
       const side = document.createElement("div");
       side.className = "component-side";
@@ -473,29 +484,25 @@
       const meta = document.createElement("p");
       meta.className = "component-meta";
       const metaLabel = document.createElement("span");
-      metaLabel.className = "label";
+      metaLabel.className = "micro";
       metaLabel.textContent = t(generated !== null ? "componentObserved" : "componentChecked");
-      meta.append(metaLabel, document.createTextNode(" "));
+      meta.append(metaLabel);
       const stamp = generated !== null ? generated : checked;
       if (stamp !== null) {
         meta.append(createTime(stamp));
       } else {
-        meta.append(document.createTextNode(t("never")));
+        const missing = document.createElement("span");
+        missing.textContent = t("never");
+        meta.append(missing);
       }
       side.append(meta);
 
-      if (stale) {
-        const flag = document.createElement("span");
-        flag.className = "stale-flag";
-        flag.textContent = t("staleFlag");
-        side.append(flag);
-      }
-
-      item.append(main, side);
+      item.append(index, name, detail, side);
       els.componentsList.append(item);
-      rendered += 1;
     }
 
+    setText(els.componentsCount, pad2(rendered));
+    updateVitals(rendered, counts);
     els.componentsEmpty.hidden = rendered > 0;
     if (rendered === 0) setText(els.componentsEmpty, t("noComponents"));
   }
@@ -503,9 +510,9 @@
   function addIncidentTime(parent, labelKey, value) {
     const wrap = document.createElement("span");
     const label = document.createElement("span");
-    label.className = "label";
+    label.className = "micro";
     label.textContent = t(labelKey);
-    wrap.append(label, document.createTextNode(" "));
+    wrap.append(label);
 
     const ms = parseTimestamp(value);
     if (ms === null) {
@@ -516,7 +523,7 @@
       wrap.append(createTime(ms));
     }
 
-    parent.append(wrap, document.createTextNode(" "));
+    parent.append(wrap);
   }
 
   function renderIncidents(payload) {
@@ -528,10 +535,12 @@
     if (incidents.length === 0) {
       els.incidentsEmpty.hidden = false;
       setText(els.incidentsEmpty, t("noIncidents"));
+      setText(els.incidentsCount, t("incidentsNone"));
       return;
     }
 
     els.incidentsEmpty.hidden = true;
+    setText(els.incidentsCount, pad2(incidents.length));
     const sorted = [
       ...incidents.filter((incident) => incident.status !== "resolved"),
       ...incidents.filter((incident) => incident.status === "resolved"),
@@ -543,6 +552,31 @@
       item.className = "incident";
       item.setAttribute("data-status", status);
 
+      const timeCol = document.createElement("div");
+      timeCol.className = "incident-time";
+      const startLabel = document.createElement("span");
+      startLabel.className = "micro";
+      startLabel.textContent = t("incidentStarted");
+      timeCol.append(startLabel);
+      const startMs = parseTimestamp(incident.started_at);
+      if (startMs !== null) {
+        timeCol.append(createTime(startMs));
+      } else {
+        const missing = document.createElement("span");
+        missing.textContent = t("unavailable");
+        timeCol.append(missing);
+      }
+
+      const rail = document.createElement("div");
+      rail.className = "incident-rail";
+      rail.setAttribute("aria-hidden", "true");
+      const node = document.createElement("span");
+      node.className = "incident-node";
+      rail.append(node);
+
+      const body = document.createElement("div");
+      body.className = "incident-body";
+
       const head = document.createElement("div");
       head.className = "incident-head";
 
@@ -553,45 +587,46 @@
       const label = INCIDENT_LABELS[state.lang][status] || STATUS_LABELS[state.lang].unknown;
       head.append(title, makePill(status, label));
 
-      const summaryText = pick(incident, "summary");
       const meta = document.createElement("div");
       meta.className = "incident-meta";
-      addIncidentTime(meta, "incidentStarted", incident.started_at);
       addIncidentTime(meta, "incidentUpdated", incident.updated_at);
 
-      item.append(head);
+      body.append(head);
+      const summaryText = pick(incident, "summary");
       if (summaryText) {
         const summary = document.createElement("p");
         summary.className = "incident-summary";
         summary.textContent = summaryText;
-        item.append(summary);
+        body.append(summary);
       }
-      item.append(meta);
+      body.append(meta);
+
+      item.append(timeCol, rail, body);
       els.incidentsList.append(item);
     }
   }
 
   function renderChecked() {
-    els.checked.replaceChildren();
-    if (state.lastChecked === null) {
-      els.checked.textContent = t("checkedNever");
-      return;
-    }
-    els.checked.append(createTime(state.lastChecked));
+    if (state.lastChecked === null) return;
+    if (!els.heroChecked) return;
+    els.heroChecked.dateTime = isoStamp(state.lastChecked);
+    els.heroChecked.textContent = formatStamp(state.lastChecked);
   }
 
   function renderAll() {
     applyStaticTranslations();
     const freshness = state.data ? getFreshness(state.data) : null;
-    state.stale = Boolean(freshness && freshness.stale);
 
     renderErrorBanner();
     renderStaleBanner(freshness);
 
     if (state.data) {
       renderHero(state.data, freshness);
-      renderComponents(state.data, state.stale);
+      renderSnapshot(state.data);
+      renderComponents(state.data);
       renderIncidents(state.data);
+    } else {
+      renderStaticState();
     }
 
     renderChecked();
@@ -631,22 +666,10 @@
     }
   }
 
-  function tick() {
-    if (document.hidden) return;
-    updateTimes();
-    if (!state.data) return;
-    const freshness = getFreshness(state.data);
-    if (freshness.stale !== state.stale) renderAll();
-  }
-
   function stopPolling() {
     if (refreshTimer !== null) {
       window.clearInterval(refreshTimer);
       refreshTimer = null;
-    }
-    if (clockTimer !== null) {
-      window.clearInterval(clockTimer);
-      clockTimer = null;
     }
   }
 
@@ -655,7 +678,6 @@
     refreshTimer = window.setInterval(() => {
       if (!document.hidden) refresh();
     }, REFRESH_MS);
-    clockTimer = window.setInterval(tick, CLOCK_MS);
   }
 
   function handleVisibilityChange() {
@@ -665,7 +687,6 @@
     }
     startPolling();
     refresh();
-    tick();
   }
 
   function setLang(lang) {
@@ -693,6 +714,7 @@
     if (!els.hero) return;
     bind();
     applyStaticTranslations();
+    renderStaticState();
     renderChecked();
     if (!document.hidden) startPolling();
     refresh();

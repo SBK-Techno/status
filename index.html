@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="fr-CA" class="no-js">
+<html lang="fr-CA" class="no-js" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <meta name="referrer" content="no-referrer">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#F7F5EF">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#080A0F">
   <meta name="description" content="État public des services de SBK Techno, publié depuis la plateforme.">
   <title data-i18n="docTitle">État du service · SBK Techno</title>
   <link rel="icon" href="/favicon.a92e4a164eb7.ico" sizes="any">
@@ -15,197 +15,222 @@
   <link rel="stylesheet" href="styles.css">
   <script src="app.js" defer></script>
 </head>
-<body class="sbk-surface" data-surface="provider">
-  <svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-    <symbol id="icon-operational" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="18.5" fill="none" stroke="currentColor" stroke-width="2.5"/>
-      <path d="M15.5 24.5l5.6 5.6 11.4-11.7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </symbol>
-    <symbol id="icon-degraded" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="18.5" fill="none" stroke="currentColor" stroke-width="2.5"/>
-      <path d="M24 14v12.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-      <circle cx="24" cy="33.5" r="1.7" fill="currentColor"/>
-    </symbol>
-    <symbol id="icon-partial_outage" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="18.5" fill="none" stroke="currentColor" stroke-width="2.5"/>
-      <path d="M24 5.5a18.5 18.5 0 0 1 0 37z" fill="currentColor"/>
-    </symbol>
-    <symbol id="icon-major_outage" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="18.5" fill="none" stroke="currentColor" stroke-width="2.5"/>
-      <path d="M17.5 17.5l13 13M30.5 17.5l-13 13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-    </symbol>
-    <symbol id="icon-maintenance" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="18.5" fill="none" stroke="currentColor" stroke-width="2.5"/>
-      <path d="M20 17v14M28 17v14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-    </symbol>
-    <symbol id="icon-unknown" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="18.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 5" stroke-linecap="round"/>
-      <circle cx="24" cy="24" r="2.4" fill="currentColor"/>
-    </symbol>
-    <symbol id="icon-stale" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 3" stroke-linecap="round"/>
-      <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
-    </symbol>
-  </svg>
-
+<body class="sbk-surface status-page" data-surface="provider">
   <a class="sbk-skip" href="#contenu" data-i18n="skipLink">Aller au contenu</a>
 
-  <header class="sbk-header">
-    <div class="sbk-shell sbk-header__inner">
-      <a class="sbk-brand" href="./" aria-label="SBK Techno, état du service" data-i18n-aria-label="brandHome">
-        <img src="/logo-color.4584ff092a16.svg" alt="SBK Techno" width="240" height="100">
+  <header class="sbk-header status-header">
+    <div class="sbk-shell status-header__inner">
+      <a class="sbk-brand status-brand" href="./" aria-label="SBK Techno, état du service" data-i18n-aria-label="brandHome">
+        <img class="status-brand__mark" src="/logo-color.4584ff092a16.svg" alt="SBK Techno" width="96" height="40">
+        <span class="status-brand__divider" aria-hidden="true"></span>
+        <span class="status-brand__label">
+          <span class="status-brand__product" data-i18n="pageTitle">État du service</span>
+        </span>
       </a>
-      <div class="lang" role="group" aria-label="Langue" data-i18n-aria-label="langGroup">
-        <button class="lang-btn" type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
-        <span class="lang-sep" aria-hidden="true">|</span>
-        <button class="lang-btn" type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
-      </div>
+      <p class="status-header__meta">
+        <span class="status-header__signal" aria-hidden="true"></span>
+        <span data-i18n="pageKicker">Information publique</span>
+      </p>
     </div>
   </header>
 
-  <main id="contenu" class="sbk-shell" tabindex="-1">
-    <section class="page-head" aria-labelledby="page-title">
-      <p class="eyebrow" data-i18n="pageKicker">Information publique</p>
-      <h1 class="page-title" id="page-title" data-i18n="pageTitle">État du service</h1>
-      <p class="page-lede" data-i18n="pageLede">L'état des services offerts aux clients et à l'équipe de SBK Techno, publié depuis la plateforme.</p>
-      <p class="page-meta">
-        <span class="site-host">status.ia.sbktechno.com</span>
-        <span class="dot" aria-hidden="true"></span>
-        <span data-i18n="pageMetaStatic">Page statique indépendante</span>
-      </p>
-    </section>
-
+  <main id="contenu" class="status-main" tabindex="-1">
     <noscript>
-      <p class="alert alert-noscript">
-        <strong>Instantané statique.</strong> Le contenu ci-dessous a été produit le
-        <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time>.
-        La donnée publiée en direct se trouve dans <a href="status.json">status.json</a>.
-      </p>
-    </noscript>
-
-    <div class="alert alert-error" id="fetch-error" role="alert" aria-labelledby="fetch-error-title" hidden>
-      <div class="alert-copy">
-        <p class="alert-title" id="fetch-error-title" data-i18n="errorTitle">Impossible de lire l'état du service</p>
-        <p class="alert-text" data-i18n="errorText">Le fichier status.json n'a pas pu être chargé. Vérifiez votre connexion, puis réessayez. Les dernières données reçues restent affichées lorsqu'elles existent.</p>
-      </div>
-      <button class="btn" id="retry-button" type="button" data-i18n="retry">Réessayer</button>
-    </div>
-
-    <div class="alert alert-stale" id="stale-banner" role="status" aria-labelledby="stale-title" hidden>
-      <svg class="alert-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#icon-stale"></use></svg>
-      <div class="alert-copy">
-        <p class="alert-title" id="stale-title" data-i18n="staleTitle">Signal périmé</p>
-        <p class="alert-text" id="stale-text">Aucun signal de vie n'a encore été reçu. L'état général est présenté comme inconnu et les composantes restent non confirmées.</p>
-      </div>
-    </div>
-
-    <section class="hero" id="hero" data-status="unknown" aria-labelledby="hero-status">
-      <div class="hero-mark" aria-hidden="true">
-        <svg class="status-icon" viewBox="0 0 48 48" focusable="false"><use href="#icon-unknown"></use></svg>
-      </div>
-      <div class="hero-body">
-        <p class="hero-kicker" data-i18n="overallEyebrow">État général</p>
-        <h2 class="hero-status" id="hero-status"><span id="hero-status-text">État inconnu</span></h2>
-        <p class="hero-summary" id="overall-summary" aria-live="polite" aria-atomic="true">Aucun signal de vie reçu. L'état du service n'est pas confirmé.</p>
-        <p class="hero-updated">
-          <span data-i18n="lastUpdate">Dernière mise à jour</span>
-          <span class="dot" aria-hidden="true"></span>
-          <span class="hero-updated-value" id="hero-updated-value">Jamais</span>
+      <div class="sbk-shell">
+        <p class="alert alert-noscript">
+          <strong>Instantané statique.</strong> Le contenu ci-dessous a été produit le
+          <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time>.
+          La donnée publiée en direct se trouve dans <a href="status.json">status.json</a>.
         </p>
       </div>
+    </noscript>
+
+    <section class="hero" id="hero" data-status="unknown" aria-labelledby="hero-title">
+      <div class="sbk-shell hero__inner">
+        <div class="hero__rail">
+          <p class="eyebrow"><span class="eyebrow__index" aria-hidden="true">01</span> <span data-i18n="overallEyebrow">État général</span></p>
+          <p class="hero__host">status.ia.sbktechno.com</p>
+        </div>
+
+        <div class="hero__copy">
+          <h1 class="hero-statement" id="hero-title">
+            <span class="hero-statement__lead" data-i18n="overallLead">L'état du service est</span>
+            <span class="hero-statement__value"><span id="hero-status-text">inconnu</span><span class="hero-statement__period" aria-hidden="true">.</span></span>
+          </h1>
+          <p class="hero-summary" id="overall-summary" aria-live="polite" aria-atomic="true">Aucun signal de vie reçu. L'état du service n'est pas confirmé.</p>
+          <p class="hero__note">
+            <span class="hero__note-mark" aria-hidden="true"></span>
+            <span data-i18n="pageMetaStatic">Page statique indépendante</span>
+          </p>
+          <div class="hero__about">
+            <p class="micro" data-i18n="aboutLabel">À propos</p>
+            <p class="hero__about-text" data-i18n="pageLede">L'état des services offerts aux clients et à l'équipe de SBK Techno, publié depuis la plateforme.</p>
+          </div>
+        </div>
+
+        <div class="vitals" id="vitals" aria-hidden="true" data-total="5">
+          <div class="vitals__head">
+            <p class="vitals__title">Vitals <span aria-hidden="true">/</span> <span data-i18n="componentsTitle">Composantes</span></p>
+            <p class="vitals__total"><span id="vitals-total">05</span></p>
+          </div>
+
+          <div class="vitals__dial">
+            <svg class="vitals__svg" viewBox="0 0 220 220" role="presentation" focusable="false">
+              <circle class="vitals__ticks" cx="110" cy="110" r="100" pathLength="100" stroke-dasharray="0.25 1.75"></circle>
+              <circle class="vitals__track" cx="110" cy="110" r="90"></circle>
+              <circle class="vitals__segment" data-vital="operational" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
+              <circle class="vitals__segment" data-vital="degraded" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
+              <circle class="vitals__segment" data-vital="outage" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
+              <circle class="vitals__segment" data-vital="maintenance" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
+              <circle class="vitals__segment" data-vital="unknown" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
+              <circle class="vitals__scale" id="vitals-scale" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0.8 19.2" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
+              <circle class="vitals__signal-track" cx="110" cy="110" r="64"></circle>
+              <circle class="vitals__signal" id="vitals-signal" cx="110" cy="110" r="64" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 110 110)"></circle>
+            </svg>
+            <div class="vitals__readout">
+              <span class="vitals__number" id="vitals-number">05</span>
+              <span class="vitals__unit" data-i18n="vitalsComponents">composantes</span>
+            </div>
+          </div>
+
+          <ul class="vitals__legend">
+            <li data-vital="operational"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalOperational">Opérationnelles</span><span class="vitals__count" data-count="operational">0</span></li>
+            <li data-vital="degraded"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalDegraded">Dégradées</span><span class="vitals__count" data-count="degraded">0</span></li>
+            <li data-vital="outage"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalOutage">Interrompues</span><span class="vitals__count" data-count="outage">0</span></li>
+            <li data-vital="maintenance"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalMaintenance">Maintenance</span><span class="vitals__count" data-count="maintenance">0</span></li>
+            <li data-vital="unknown"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalUnknown">Inconnues</span><span class="vitals__count" data-count="unknown">5</span></li>
+          </ul>
+
+          <p class="vitals__signal-line">
+            <span data-i18n="vitalSignals">Signaux reçus</span>
+            <span class="vitals__signal-value"><span id="vitals-signals">0</span>/<span id="vitals-signal-total">5</span></span>
+          </p>
+        </div>
+
+        <div class="hero__foot">
+          <p class="hero__check">
+            <span class="micro" data-i18n="heroChecked">Vérifié</span>
+            <time id="hero-checked" datetime="2026-10-25T13:56:03Z">2026-10-25 · 13:56 UTC</time>
+          </p>
+          <p class="hero__next">
+            <a href="#components-title"><span data-i18n="componentsTitle">Composantes</span> <span aria-hidden="true">↓</span></a>
+          </p>
+          <p class="hero__source">
+            <span class="micro" data-i18n="sourceLabel">Source</span>
+            <a href="status.json">status.json</a>
+          </p>
+        </div>
+      </div>
     </section>
 
-    <section class="section" aria-labelledby="components-title">
-      <header class="section-head">
-        <span class="section-index" aria-hidden="true">01</span>
-        <h2 class="section-title" id="components-title"><span data-i18n="componentsTitle">Composantes</span></h2>
-      </header>
-      <!-- Static snapshot of status.json; app.js replaces it with the live document. -->
-      <ul class="components" id="components-list">
-        <li class="component">
-          <div class="component-main">
+    <div class="sbk-shell">
+      <div class="alert alert-error" id="fetch-error" role="alert" aria-labelledby="fetch-error-title" hidden>
+        <div class="alert-copy">
+          <p class="alert-title" id="fetch-error-title" data-i18n="errorTitle">Impossible de lire l'état du service</p>
+          <p class="alert-text" data-i18n="errorText">Le fichier status.json n'a pas pu être chargé. Vérifiez votre connexion, puis réessayez. Les dernières données reçues restent affichées lorsqu'elles existent.</p>
+        </div>
+        <button class="btn" id="retry-button" type="button" data-i18n="retry">Réessayer</button>
+      </div>
+
+      <div class="alert alert-stale" id="stale-banner" role="status" aria-labelledby="stale-title" hidden>
+        <div class="alert-copy">
+          <p class="alert-title" id="stale-title" data-i18n="staleTitle">Signal périmé</p>
+          <p class="alert-text" id="stale-text">Aucun signal de vie n'a encore été reçu. L'état général est présenté comme inconnu et les composantes restent non confirmées.</p>
+        </div>
+      </div>
+    </div>
+
+    <section class="board" aria-labelledby="components-title">
+      <div class="sbk-shell">
+        <header class="section-head">
+          <span class="section-index" aria-hidden="true">02</span>
+          <h2 class="section-title" id="components-title"><span data-i18n="componentsTitle">Composantes</span></h2>
+          <p class="section-count"><span id="components-count">05</span> <span data-i18n="componentsTracked">suivies</span></p>
+        </header>
+
+        <!-- Static snapshot of status.json; app.js replaces it with the live document. -->
+        <ul class="components" id="components-list">
+          <li class="component" data-status="unknown">
+            <span class="component-index" aria-hidden="true">01</span>
             <h3 class="component-name">Portail</h3>
             <p class="component-detail">Aucun signal de vie reçu pour le portail.</p>
-          </div>
-          <div class="component-side">
-            <span class="pill" data-status="unknown">Inconnu</span>
-            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
-            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
-          </div>
-        </li>
-        <li class="component">
-          <div class="component-main">
+            <div class="component-side">
+              <span class="pill" data-status="unknown">Inconnu</span>
+              <p class="component-meta"><span class="micro" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">2026-10-25 · 13:56 UTC</time></p>
+            </div>
+          </li>
+          <li class="component" data-status="unknown">
+            <span class="component-index" aria-hidden="true">02</span>
             <h3 class="component-name">Documentation</h3>
             <p class="component-detail">Aucun signal de vie reçu pour la documentation.</p>
-          </div>
-          <div class="component-side">
-            <span class="pill" data-status="unknown">Inconnu</span>
-            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
-            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
-          </div>
-        </li>
-        <li class="component">
-          <div class="component-main">
+            <div class="component-side">
+              <span class="pill" data-status="unknown">Inconnu</span>
+              <p class="component-meta"><span class="micro" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">2026-10-25 · 13:56 UTC</time></p>
+            </div>
+          </li>
+          <li class="component" data-status="unknown">
+            <span class="component-index" aria-hidden="true">03</span>
             <h3 class="component-name">Applications clients</h3>
             <p class="component-detail">Aucun signal de vie reçu pour les applications clients.</p>
-          </div>
-          <div class="component-side">
-            <span class="pill" data-status="unknown">Inconnu</span>
-            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
-            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
-          </div>
-        </li>
-        <li class="component">
-          <div class="component-main">
+            <div class="component-side">
+              <span class="pill" data-status="unknown">Inconnu</span>
+              <p class="component-meta"><span class="micro" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">2026-10-25 · 13:56 UTC</time></p>
+            </div>
+          </li>
+          <li class="component" data-status="unknown">
+            <span class="component-index" aria-hidden="true">04</span>
             <h3 class="component-name">Passerelle IA</h3>
             <p class="component-detail">Aucun signal de vie reçu pour la passerelle IA.</p>
-          </div>
-          <div class="component-side">
-            <span class="pill" data-status="unknown">Inconnu</span>
-            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
-            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
-          </div>
-        </li>
-        <li class="component">
-          <div class="component-main">
+            <div class="component-side">
+              <span class="pill" data-status="unknown">Inconnu</span>
+              <p class="component-meta"><span class="micro" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">2026-10-25 · 13:56 UTC</time></p>
+            </div>
+          </li>
+          <li class="component" data-status="unknown">
+            <span class="component-index" aria-hidden="true">05</span>
             <h3 class="component-name">Page d'état</h3>
             <p class="component-detail">Aucun signal de vie reçu pour la page d'état.</p>
-          </div>
-          <div class="component-side">
-            <span class="pill" data-status="unknown">Inconnu</span>
-            <p class="component-meta"><span class="label" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">25 octobre 2026 à 13 h 56 UTC</time></p>
-            <span class="stale-flag" data-i18n="staleFlag">Signal périmé</span>
-          </div>
-        </li>
-      </ul>
-      <p class="quiet" id="components-empty" hidden>Aucune composante déclarée.</p>
+            <div class="component-side">
+              <span class="pill" data-status="unknown">Inconnu</span>
+              <p class="component-meta"><span class="micro" data-i18n="componentSnapshot">Instantané</span> <time datetime="2026-10-25T13:56:03Z">2026-10-25 · 13:56 UTC</time></p>
+            </div>
+          </li>
+        </ul>
+        <p class="quiet" id="components-empty" hidden>Aucune composante déclarée.</p>
+      </div>
     </section>
 
-    <section class="section" aria-labelledby="incidents-title">
-      <header class="section-head">
-        <span class="section-index" aria-hidden="true">02</span>
-        <h2 class="section-title" id="incidents-title"><span data-i18n="incidentsTitle">Incidents</span></h2>
-      </header>
-      <ol class="incidents" id="incidents-list"></ol>
-      <p class="quiet" id="incidents-empty">Aucun incident déclaré.</p>
+    <section class="incidents-section" aria-labelledby="incidents-title">
+      <div class="sbk-shell">
+        <header class="section-head">
+          <span class="section-index" aria-hidden="true">03</span>
+          <h2 class="section-title" id="incidents-title"><span data-i18n="incidentsTitle">Incidents</span></h2>
+          <p class="section-count" id="incidents-count"><span data-i18n="incidentsNone">Aucun</span></p>
+        </header>
+
+        <ol class="incidents" id="incidents-list"></ol>
+        <p class="quiet" id="incidents-empty">Aucun incident déclaré. Le journal est vide pour cet instantané.</p>
+      </div>
     </section>
   </main>
 
-  <footer class="sbk-footer">
-    <div class="sbk-shell sbk-footer__inner">
-      <div class="footer-identity">
-        <p class="footer-brand">
-          <img class="sbk-footer__mark" src="/icon-color.28c7970f44f7.svg" alt="" width="16" height="16">
-          <span>Exploité par SBK Techno</span>
-        </p>
-        <p class="footer-copy" data-i18n="footerBlurb">Page d'état publique de SBK Techno. Les données sont publiées par la plateforme sous forme de fichier statique.</p>
-        <p class="footer-copy" data-i18n="footerPrivacy">Aucun cookie, aucun outil de mesure, aucune ressource externe.</p>
-      </div>
-      <div class="footer-meta">
-        <p><span data-i18n="checkedLabel">Dernière vérification</span> <span class="dot" aria-hidden="true"></span> <span id="checked-value">Pas encore vérifié</span></p>
-        <p class="refresh-note" data-i18n="refreshNote">Actualisation automatique toutes les 60 secondes.</p>
-        <p><span data-i18n="footerSource">Fichier publié</span> <span class="dot" aria-hidden="true"></span> <a href="status.json">status.json</a></p>
-        <p><span>status.ia.sbktechno.com</span> <span class="dot" aria-hidden="true"></span> <span data-i18n="footerHost">Hébergé sur GitHub Pages</span></p>
+  <footer class="sbk-footer status-footer">
+    <div class="sbk-shell status-footer__inner">
+      <p class="status-footer__product">
+        <img class="status-footer__mark" src="/icon-color.28c7970f44f7.svg" alt="" width="16" height="16">
+        <span data-i18n="footerProduct">Exploité par SBK Techno</span>
+      </p>
+      <p class="status-footer__snapshot">
+        <span class="micro" data-i18n="footerSnapshot">Instantané</span>
+        <time id="snapshot-time" datetime="2026-10-25T13:56:03Z">2026-10-25 · 13:56 UTC</time>
+      </p>
+      <p class="status-footer__source">
+        <span class="micro" data-i18n="footerSource">Fichier publié</span>
+        <a href="status.json">status.json</a>
+      </p>
+      <div class="lang" role="group" aria-label="Langue" data-i18n-aria-label="langGroup">
+        <button class="lang-btn" type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
+        <button class="lang-btn" type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
       </div>
     </div>
   </footer>

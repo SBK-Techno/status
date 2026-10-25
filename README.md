@@ -28,6 +28,12 @@ The platform command `cmd/brandlint` is the design gate for every SBK-operated s
 
 `styles.css` contains only status-page layout. Every colour, font family, spacing value, and radius resolves through a `--sbk-*` token declared in the brand stylesheet.
 
+## Presentation
+
+The public board is a graphite surface (`data-theme="dark"`). It opens on a full-viewport panel with a text status word in the status colour, a monospaced check time, and a compact inline-SVG vitals instrument on the right. The instrument is decorative and `aria-hidden`; its arcs and counts mirror the component board, which is the accessible source of the same facts. The component rows and the incident timeline are separated by hairlines rather than cards. The theme colour is the dark canvas token, not a second literal.
+
+The status word, every component name, state, detail, and timestamp remain in the static HTML. With JavaScript disabled the page keeps that published snapshot, the `<noscript>` note, and a visible link to `status.json`; the language switch and any refresh claim stay hidden.
+
 ## Hosting and DNS
 
 - GitHub Pages origin: `sbk-techno.github.io`.
@@ -51,7 +57,7 @@ Freshness rules:
 - `generated_at` is null: stale.
 - `expires_at` is in the past: stale.
 - `generated_at` is older than 15 minutes: stale.
-- Stale data keeps the component rows and their last reported state, marks them `Signal périmé`, forces the overall hero state to `unknown`, and shows the stale banner.
+- Stale data keeps the component rows and their last reported state, forces the overall hero state to `unknown`, and shows the stale banner. The banner is the single stale marker; rows stay clean.
 - A failed fetch keeps the last rendered data and shows an error banner with a retry button. If nothing has loaded yet, the page shows an explicit error state.
 
 The publisher writes `generated_at` and `expires_at` in UTC. `expires_at` is at most 15 minutes after `generated_at`. The page treats the signal as stale after that window even if `expires_at` is later, so the timer must run more often than 15 minutes. Incidents stay operator-owned: the publisher copies them from its configured incident file and never invents or resolves one.

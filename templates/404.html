@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="fr-CA">
+<html lang="fr-CA" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#F7F5EF">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#080A0F">
   <meta name="description" content="Page introuvable sur le site d'état de SBK Techno.">
   <title>Page introuvable · SBK Techno</title>
   <link rel="icon" href="{{asset:favicon.ico}}" sizes="any">
@@ -15,32 +15,47 @@
   <link rel="stylesheet" href="{{asset:brand.css}}">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body class="sbk-surface" data-surface="provider">
+<body class="sbk-surface status-page" data-surface="provider">
   <a class="sbk-skip" href="#contenu">Aller au contenu</a>
 
-  <header class="sbk-header">
-    <div class="sbk-shell sbk-header__inner">
-      <a class="sbk-brand" href="/" aria-label="SBK Techno, état du service">
-        <img src="{{asset:logo-color.svg}}" alt="SBK Techno" width="240" height="100">
+  <header class="sbk-header status-header">
+    <div class="sbk-shell status-header__inner">
+      <a class="sbk-brand status-brand" href="/" aria-label="SBK Techno, état du service">
+        <img class="status-brand__mark" src="{{asset:logo-color.svg}}" alt="SBK Techno" width="96" height="40">
+        <span class="status-brand__divider" aria-hidden="true"></span>
+        <span class="status-brand__label">
+          <span class="status-brand__product">État du service</span>
+        </span>
       </a>
+      <p class="status-header__meta">
+        <span class="status-header__index" aria-hidden="true">404</span>
+        <span>Hors du tableau</span>
+      </p>
     </div>
   </header>
 
-  <main id="contenu" class="sbk-shell error-page" tabindex="-1">
-    <p class="eyebrow">Erreur 404</p>
-    <h1 class="page-title">Page introuvable</h1>
-    <p class="page-lede">Cette adresse n'existe pas ou a été déplacée. L'état des services reste disponible sur la page d'accueil.</p>
-    <p class="error-en" lang="en">This address does not exist or has moved. The service status remains available on the home page.</p>
-    <p class="error-actions"><a class="btn" href="/">Retour à l'état du service</a></p>
+  <main id="contenu" class="status-main error-page" tabindex="-1">
+    <div class="sbk-shell error-page__inner">
+      <p class="eyebrow"><span class="eyebrow__index" aria-hidden="true">404</span> Adresse inconnue</p>
+      <div class="error-page__grid">
+        <p class="error-code" aria-hidden="true">404</p>
+        <div class="error-copy">
+          <h1 class="error-title">Page introuvable</h1>
+          <p class="error-lede">Cette adresse n'existe pas ou a été déplacée. L'état des services reste disponible sur la page d'accueil.</p>
+          <p class="error-en" lang="en">This address does not exist or has moved. The service status remains available on the home page.</p>
+          <p class="error-actions"><a class="btn" href="/">Retour à l'état du service</a></p>
+        </div>
+      </div>
+    </div>
   </main>
 
-  <footer class="sbk-footer">
-    <div class="sbk-shell sbk-footer__inner">
-      <p class="footer-brand">
-        <img class="sbk-footer__mark" src="{{asset:icon-color.svg}}" alt="" width="16" height="16">
+  <footer class="sbk-footer status-footer">
+    <div class="sbk-shell status-footer__inner status-footer__inner--error">
+      <p class="status-footer__product">
+        <img class="status-footer__mark" src="{{asset:icon-color.svg}}" alt="" width="16" height="16">
         <span>Exploité par SBK Techno</span>
       </p>
-      <p class="footer-meta"><a href="/">status.ia.sbktechno.com</a></p>
+      <p class="status-footer__source"><a href="/">status.ia.sbktechno.com</a></p>
     </div>
   </footer>
 </body>
