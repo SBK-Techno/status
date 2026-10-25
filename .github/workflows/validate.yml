@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import hashlib
+          import re
           import json
           import sys
           from pathlib import Path
@@ -40,6 +41,25 @@ jobs:
               if "{{asset:" in text:
                   sys.exit(f"{name}: unresolved brand placeholder")
 
+          # An asset is referenced either from a page or from a stylesheet the
+          # page links. A font is never in the HTML: it is named by an
+          # @font-face rule, so requiring an HTML reference would reject a
+          # correctly published font.
+          root = Path(".")
+          stylesheets = {}
+          for page, text in pages.items():
+              for match in re.findall(r'<link[^>]+href="([^"]+\.css)"', text):
+                  # A page links a published stylesheet as a site-absolute URL
+                  # such as /brand.feb52ba6b3fe.css, so the leading slash is
+                  # stripped before resolving it inside the checkout.
+                  candidate = root / match.lstrip("/")
+                  if not candidate.is_file():
+                      # Dropping a link that does not resolve would silently
+                      # fall back to the page-only check and reject every font
+                      # the stylesheet names, so it is reported instead.
+                      sys.exit(f"{page}: linked stylesheet {match} is missing")
+                  stylesheets[match] = candidate.read_text(encoding="utf-8")
+
           for asset in assets:
               if not asset.get("publish"):
                   continue
@@ -51,9 +71,8 @@ jobs:
                   sys.exit(f"{path}: digest mismatch")
               if len(data) != asset["bytes"]:
                   sys.exit(f"{path}: size mismatch")
-              for name, text in pages.items():
-                  if asset["file"] not in text:
-                      sys.exit(f"{name}: does not reference {asset['file']}")
+              if not any(asset["file"] in text for text in list(pages.values()) + list(stylesheets.values())):
+                  sys.exit(f"{asset['file']}: published but not referenced by any page or stylesheet")
 
           print(f"brand manifest ok: {len(assets)} assets")
           PY

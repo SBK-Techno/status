@@ -3,12 +3,36 @@
   "generatedBy": "cmd/genstatus",
   "assets": [
     {
+      "name": "archivo-400.woff2",
+      "file": "archivo-400.4b9ff27fd9c6.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "4b9ff27fd9c65840eb324ab16e324bbebfecbe66f1685784e7a6c97d74ab75c0",
+      "bytes": 12432
+    },
+    {
+      "name": "archivo-700.woff2",
+      "file": "archivo-700.f8c7935631ed.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "f8c7935631edf0a37824f612ad7c94ca8cc113824842efff1a654b571ca876e2",
+      "bytes": 11608
+    },
+    {
+      "name": "archivo-display.woff2",
+      "file": "archivo-display.32488d08b473.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "32488d08b47323e2e9c4a6526fd62db28ca957e313661bf91cb6fe046bfe107e",
+      "bytes": 11816
+    },
+    {
       "name": "brand.css",
-      "file": "brand.27d9e28e8f33.css",
+      "file": "brand.feb52ba6b3fe.css",
       "mediaType": "text/css; charset=utf-8",
       "publish": true,
-      "sha256": "27d9e28e8f3368032eb2968f18b60e06c4601643fec89632f61cbf1981bf236b",
-      "bytes": 7420
+      "sha256": "feb52ba6b3feae291e0318a394b616d81a56925511850410eeb836064402fa54",
+      "bytes": 8241
     },
     {
       "name": "favicon.ico",
