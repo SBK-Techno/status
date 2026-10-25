@@ -45,12 +45,20 @@ jobs:
           # page links. A font is never in the HTML: it is named by an
           # @font-face rule, so requiring an HTML reference would reject a
           # correctly published font.
+          root = Path(".")
           stylesheets = {}
-          for text in pages.values():
+          for page, text in pages.items():
               for match in re.findall(r'<link[^>]+href="([^"]+\.css)"', text):
-                  candidate = Path(match)
-                  if candidate.is_file():
-                      stylesheets[match] = candidate.read_text(encoding="utf-8")
+                  # A page links a published stylesheet as a site-absolute URL
+                  # such as /brand.feb52ba6b3fe.css, so the leading slash is
+                  # stripped before resolving it inside the checkout.
+                  candidate = root / match.lstrip("/")
+                  if not candidate.is_file():
+                      # Dropping a link that does not resolve would silently
+                      # fall back to the page-only check and reject every font
+                      # the stylesheet names, so it is reported instead.
+                      sys.exit(f"{page}: linked stylesheet {match} is missing")
+                  stylesheets[match] = candidate.read_text(encoding="utf-8")
 
           for asset in assets:
               if not asset.get("publish"):
