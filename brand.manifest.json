@@ -4,11 +4,11 @@
   "assets": [
     {
       "name": "brand.css",
-      "file": "brand.864416786197.css",
+      "file": "brand.27d9e28e8f33.css",
       "mediaType": "text/css; charset=utf-8",
       "publish": true,
-      "sha256": "864416786197d45ac4c09bdfaac86f251b4e51d9362dc79f5aed82f663f38348",
-      "bytes": 7416
+      "sha256": "27d9e28e8f3368032eb2968f18b60e06c4601643fec89632f61cbf1981bf236b",
+      "bytes": 7420
     },
     {
       "name": "favicon.ico",
