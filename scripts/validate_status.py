@@ -51,6 +51,8 @@ INCIDENT_FIELDS = {
 CNAME = b"status.ia.sbktechno.com\n"
 REQUIRED_FILES = ("index.html", "404.html", "styles.css", "app.js")
 SITE_HOST = "status.ia.sbktechno.com"
+DARK_SELECTOR = ':root[data-theme="dark"]'
+BRAND_PROPERTY = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
 FRENCH_LANG = re.compile(r"^fr(?:-[A-Za-z0-9]{1,8})*$")
 EVENT_HANDLER = re.compile(r"^on[a-z]+$")
 CSS_URL = re.compile(r"url\(\s*(['\"]?)([^'\")]+)\1\s*\)", re.IGNORECASE)
@@ -268,6 +270,35 @@ def classes(node: Element) -> set[str]:
     return set(node.attrs.get("class", "").split())
 
 
+def aria_hidden(node: Element) -> bool:
+    current: Element | None = node
+    while current is not None:
+        if current.attrs.get("aria-hidden", "").strip().lower() == "true":
+            return True
+        current = current.parent
+    return False
+
+
+def brand_properties(stylesheet: str, *, dark: bool = False) -> dict[str, str]:
+    """Return the six-digit colour tokens for one mode of the brand sheet.
+
+    The brand layer declares light tokens first and redefines them under the
+    dark selector. Slicing at that selector keeps one mode from overwriting the
+    other, so a dark-only pair cannot pass a light-mode test by accident.
+    """
+    index = stylesheet.find(DARK_SELECTOR)
+    if dark:
+        if index < 0:
+            return {}
+        stylesheet = stylesheet[index:]
+    elif index >= 0:
+        stylesheet = stylesheet[:index]
+    return {
+        match.group(1): match.group(2).upper()
+        for match in BRAND_PROPERTY.finditer(stylesheet)
+    }
+
+
 def parse_page(text: str) -> Element:
     parser = PageParser()
     parser.feed(text)
@@ -344,7 +375,13 @@ def local_site_path(href: str) -> str | None:
     return path or None
 
 
-def validate_page(name: str, text: str, *, require_status: bool = False) -> list[str]:
+def validate_page(
+    name: str,
+    text: str,
+    *,
+    require_status: bool = False,
+    theme_color: str | None = None,
+) -> list[str]:
     root = parse_page(text)
     errors: list[str] = []
 
@@ -359,6 +396,10 @@ def validate_page(name: str, text: str, *, require_status: bool = False) -> list
             errors.append(
                 f"{name}: <html lang={lang!r}> must declare French as the document language"
             )
+        if html.attrs.get("data-theme", "").strip().lower() != "dark":
+            errors.append(
+                f'{name}: <html> must declare data-theme="dark" for the graphite surface'
+            )
 
     mains = list(root.find_all("main"))
     if len(mains) != 1:
@@ -367,6 +408,63 @@ def validate_page(name: str, text: str, *, require_status: bool = False) -> list
         errors.append(f"{name}: missing top-level <header> banner landmark")
     if not any(is_landmark(node) for node in root.find_all("footer")):
         errors.append(f"{name}: missing top-level <footer> contentinfo landmark")
+
+    color_schemes = [
+        node
+        for node in root.find_all("meta")
+        if node.attrs.get("name", "").lower() == "color-scheme"
+    ]
+    if not color_schemes:
+        errors.append(f"{name}: missing color-scheme meta tag")
+    else:
+        values = re.split(r"[\s,]+", color_schemes[0].attrs.get("content", "").lower())
+        if "dark" not in values:
+            errors.append(f"{name}: color-scheme meta must include dark")
+
+    theme_metas = [
+        node
+        for node in root.find_all("meta")
+        if node.attrs.get("name", "").lower() == "theme-color"
+    ]
+    if not theme_metas:
+        errors.append(f"{name}: missing theme-color meta tag")
+    elif len(theme_metas) > 1:
+        errors.append(f"{name}: must declare exactly one theme-color meta tag")
+    else:
+        got = theme_metas[0].attrs.get("content", "").strip()
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", got):
+            errors.append(f"{name}: theme-color must be a six-digit hex colour")
+        elif theme_color is not None and got.lower() != theme_color.lower():
+            errors.append(
+                f"{name}: theme-color {got!r} must equal the dark --sbk-canvas "
+                f"token {theme_color!r}"
+            )
+
+    brand_links = [
+        node for node in root.find_all("a") if "sbk-brand" in classes(node)
+    ]
+    if not brand_links:
+        errors.append(f"{name}: missing the .sbk-brand header mark link")
+    else:
+        mark = next(brand_links[0].find_all("img"), None)
+        if mark is None:
+            errors.append(f"{name}: the .sbk-brand link must contain the header mark")
+        else:
+            if not mark.attrs.get("alt", "").strip():
+                errors.append(f"{name}: the header mark must have a text alternative")
+            height = mark.attrs.get("height", "").strip()
+            width = mark.attrs.get("width", "").strip()
+            if not height.isdigit() or not width.isdigit():
+                errors.append(
+                    f"{name}: the header mark must declare numeric width and height"
+                )
+            elif not 32 <= int(height) <= 48:
+                errors.append(
+                    f"{name}: the header mark height {height!r} must be between "
+                    "32 and 48 pixels"
+                )
+            elif int(width) <= 0:
+                errors.append(f"{name}: the header mark width must be positive")
 
     skip_links = [node for node in root.find_all("a") if classes(node) & {"sbk-skip", "skip"}]
     if not skip_links:
@@ -470,12 +568,34 @@ def validate_page(name: str, text: str, *, require_status: bool = False) -> list
         errors.append(f"{name}: viewport meta must set width=device-width")
 
     if require_status:
-        for element_id in ("hero-status-text", "overall-summary"):
-            node = next(root.find_all(element_id=element_id), None)
-            if node is None or not node.text().strip():
-                errors.append(f"{name}: #{element_id} must contain static status text")
+        hero = next(root.find_all(element_id="hero"), None)
+        if hero is None:
+            errors.append(f"{name}: missing #hero")
+        elif hero.attrs.get("data-status", "") not in STATUSES:
+            errors.append(
+                f"{name}: #hero must declare a valid data-status "
+                f"(found {hero.attrs.get('data-status')!r})"
+            )
+
+        status_word = next(root.find_all(element_id="hero-status-text"), None)
+        if status_word is None or not status_word.text().strip():
+            errors.append(f"{name}: #hero-status-text must contain static status text")
+        elif aria_hidden(status_word):
+            errors.append(
+                f"{name}: #hero-status-text must expose the status as text, "
+                "not hide it from assistive technology"
+            )
+        elif next(status_word.find_all("svg"), None) is not None:
+            errors.append(
+                f"{name}: #hero-status-text must be a text status word, not an icon"
+            )
+
+        summary = next(root.find_all(element_id="overall-summary"), None)
+        if summary is None or not summary.text().strip():
+            errors.append(f"{name}: #overall-summary must contain static status text")
 
         components = next(root.find_all("ul", element_id="components-list"), None)
+        rows: list[Element] = []
         if components is None:
             errors.append(f"{name}: missing #components-list")
         else:
@@ -508,6 +628,38 @@ def validate_page(name: str, text: str, *, require_status: bool = False) -> list
                     )
                 if next(row.find_all("time"), None) is None:
                     errors.append(f"{name}: component row {index} needs a <time> timestamp")
+
+        component_count = next(root.find_all(element_id="components-count"), None)
+        if component_count is None or not component_count.text().strip():
+            errors.append(
+                f"{name}: #components-count must expose the component count as text"
+            )
+
+        vitals = next(root.find_all(element_id="vitals"), None)
+        if vitals is None:
+            errors.append(f"{name}: missing #vitals")
+        else:
+            if vitals.attrs.get("aria-hidden", "").strip().lower() != "true":
+                errors.append(
+                    f"{name}: #vitals must be aria-hidden because it is a "
+                    "decorative view of the component board"
+                )
+            svg = next(vitals.find_all("svg"), None)
+            if svg is None:
+                errors.append(f"{name}: #vitals must contain inline SVG")
+            elif (
+                svg.attrs.get("aria-hidden", "").strip().lower() != "true"
+                and svg.attrs.get("role", "").strip().lower() != "presentation"
+            ):
+                errors.append(f"{name}: the #vitals SVG must be decorative")
+            total = vitals.attrs.get("data-total", "").strip()
+            if not total.isdigit():
+                errors.append(f"{name}: #vitals must declare a numeric data-total")
+            elif rows and int(total) != len(rows):
+                errors.append(
+                    f"{name}: #vitals data-total {total!r} must match the "
+                    f"{len(rows)} static component rows"
+                )
 
         empty = next(root.find_all(element_id="components-empty"), None)
         if empty is None:
@@ -552,8 +704,56 @@ def load_document(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def brand_theme_color(root: Path) -> tuple[str | None, list[str]]:
+    """Read the dark canvas colour from the published brand stylesheet.
+
+    The browser chrome colour is a consequence of the surface mode, so its
+    owner is the brand layer, not a second literal in the page.
+    """
+    manifest_path = root / "brand.manifest.json"
+    if not manifest_path.is_file():
+        return None, ["brand.manifest.json is missing"]
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, [f"brand.manifest.json cannot be read: {exc}"]
+    if not isinstance(manifest, dict) or manifest.get("version") != 1:
+        return None, ["brand.manifest.json must declare version 1"]
+    assets = manifest.get("assets")
+    if not isinstance(assets, list):
+        return None, ["brand.manifest.json assets must be a list"]
+    brand = next(
+        (
+            asset
+            for asset in assets
+            if isinstance(asset, dict)
+            and asset.get("name") == "brand.css"
+            and asset.get("publish")
+        ),
+        None,
+    )
+    if brand is None:
+        return None, ["brand.manifest.json must publish brand.css"]
+    filename = brand.get("file")
+    if not isinstance(filename, str) or not filename.strip():
+        return None, ["brand.manifest.json brand.css entry has no file"]
+    stylesheet_path = root / filename
+    if not stylesheet_path.is_file():
+        return None, [f"brand.manifest.json: brand.css file {filename!r} is missing"]
+    try:
+        stylesheet = stylesheet_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, [f"{filename}: cannot be read: {exc}"]
+    value = brand_properties(stylesheet, dark=True).get("--sbk-canvas")
+    if value is None:
+        return None, [f"{filename}: must declare --sbk-canvas in the dark theme"]
+    return value, []
+
+
 def validate_site(root: Path) -> list[str]:
     errors = validate_document(load_document(root / "status.json"))
+    theme_color, brand_errors = brand_theme_color(root)
+    errors.extend(brand_errors)
     cname = root / "CNAME"
     if not cname.is_file():
         errors.append("CNAME is missing")
@@ -577,7 +777,14 @@ def validate_site(root: Path) -> list[str]:
             errors.append(f"{name}: cannot be read: {exc}")
             continue
         pages[name] = text
-        errors.extend(validate_page(name, text, require_status=(name == "index.html")))
+        errors.extend(
+            validate_page(
+                name,
+                text,
+                require_status=(name == "index.html"),
+                theme_color=theme_color,
+            )
+        )
 
     seen_stylesheets: set[str] = set()
     for name, text in pages.items():

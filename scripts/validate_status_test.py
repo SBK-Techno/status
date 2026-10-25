@@ -23,21 +23,31 @@ SPEC.loader.exec_module(VALIDATOR)
 
 def valid_page() -> str:
     return """<!doctype html>
-<html lang="fr-CA">
+<html lang="fr-CA" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#080A0F">
 <title>État du service</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <a class="sbk-skip" href="#contenu">Aller au contenu</a>
-<header class="sbk-header"><p>SBK Techno</p></header>
+<header class="sbk-header">
+<a class="sbk-brand" href="/"><img src="/logo.svg" alt="SBK Techno" width="96" height="40"></a>
+</header>
 <main id="contenu" tabindex="-1">
+<section id="hero" data-status="unknown">
 <h1>État du service</h1>
 <p id="hero-status-text">État inconnu</p>
 <p id="overall-summary">Aucun signal de vie reçu.</p>
+<div id="vitals" aria-hidden="true" data-total="1">
+<svg role="presentation" focusable="false"></svg>
+</div>
+</section>
 <h2>Composantes</h2>
+<p><span id="components-count">01</span> suivies</p>
 <ul id="components-list">
 <li class="component">
 <h3>Portail</h3>
@@ -55,6 +65,21 @@ def valid_page() -> str:
 <noscript><p>Instantané statique du <time datetime="2026-10-25T13:42:57Z">25 octobre 2026</time>.</p></noscript>
 </body>
 </html>"""
+
+
+def channel(value: int) -> float:
+    value = value / 255
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def luminance(color: str) -> float:
+    red, green, blue = (int(color[index : index + 2], 16) for index in (1, 3, 5))
+    return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
+
+
+def ratio(foreground: str, background: str) -> float:
+    first, second = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (first + 0.05) / (second + 0.05)
 
 
 def valid_document() -> dict:
@@ -131,15 +156,28 @@ class ValidateStatusTest(unittest.TestCase):
 
     def test_accepts_valid_page(self) -> None:
         self.assertEqual(
-            VALIDATOR.validate_page("index.html", valid_page(), require_status=True),
+            VALIDATOR.validate_page(
+                "index.html",
+                valid_page(),
+                require_status=True,
+                theme_color="#080A0F",
+            ),
             [],
         )
-        self.assertEqual(VALIDATOR.validate_page("404.html", valid_page()), [])
+        self.assertEqual(
+            VALIDATOR.validate_page("404.html", valid_page(), theme_color="#080A0F"),
+            [],
+        )
 
     def test_rejects_page_regressions(self) -> None:
         def run(mutate) -> str:
             return " | ".join(
-                VALIDATOR.validate_page("index.html", mutate(valid_page()), require_status=True)
+                VALIDATOR.validate_page(
+                    "index.html",
+                    mutate(valid_page()),
+                    require_status=True,
+                    theme_color="#080A0F",
+                )
             )
 
         cases = {
@@ -284,7 +322,11 @@ class ValidateStatusTest(unittest.TestCase):
                 "text status label",
             ),
             "component invalid status": (
-                lambda p: p.replace('data-status="unknown"', 'data-status="green"', 1),
+                lambda p: p.replace(
+                    '<span class="pill" data-status="unknown">',
+                    '<span class="pill" data-status="green">',
+                    1,
+                ),
                 "invalid status",
             ),
             "components without rows": (
@@ -324,6 +366,91 @@ class ValidateStatusTest(unittest.TestCase):
                     "",
                 ),
                 "viewport",
+            ),
+            "light theme": (
+                lambda p: p.replace('data-theme="dark"', 'data-theme="light"'),
+                "graphite surface",
+            ),
+            "missing color scheme": (
+                lambda p: p.replace('<meta name="color-scheme" content="dark">', ""),
+                "color-scheme meta",
+            ),
+            "light color scheme": (
+                lambda p: p.replace(
+                    '<meta name="color-scheme" content="dark">',
+                    '<meta name="color-scheme" content="light">',
+                ),
+                "must include dark",
+            ),
+            "wrong theme color": (
+                lambda p: p.replace(
+                    '<meta name="theme-color" content="#080A0F">',
+                    '<meta name="theme-color" content="#F7F5EF">',
+                ),
+                "must equal the dark",
+            ),
+            "missing brand mark": (
+                lambda p: p.replace(
+                    '<a class="sbk-brand" href="/"><img src="/logo.svg" '
+                    'alt="SBK Techno" width="96" height="40"></a>',
+                    "",
+                ),
+                "header mark",
+            ),
+            "mark too tall": (
+                lambda p: p.replace('width="96" height="40"', 'width="96" height="80"', 1),
+                "must be between 32 and 48",
+            ),
+            "missing hero": (
+                lambda p: p.replace(
+                    '<section id="hero" data-status="unknown">', "<section>"
+                ),
+                "missing #hero",
+            ),
+            "invalid hero status": (
+                lambda p: p.replace(
+                    '<section id="hero" data-status="unknown">',
+                    '<section id="hero" data-status="green">',
+                ),
+                "valid data-status",
+            ),
+            "hidden status word": (
+                lambda p: p.replace(
+                    '<p id="hero-status-text">',
+                    '<p id="hero-status-text" aria-hidden="true">',
+                ),
+                "not hide it",
+            ),
+            "icon status word": (
+                lambda p: p.replace(
+                    '<p id="hero-status-text">État inconnu</p>',
+                    '<p id="hero-status-text">État inconnu<svg></svg></p>',
+                ),
+                "not an icon",
+            ),
+            "missing vitals": (
+                lambda p: re.sub(
+                    r'<div id="vitals".*?</div>', "", p, flags=re.S
+                ),
+                "missing #vitals",
+            ),
+            "vitals not hidden": (
+                lambda p: p.replace(
+                    '<div id="vitals" aria-hidden="true" data-total="1">',
+                    '<div id="vitals" data-total="1">',
+                ),
+                "must be aria-hidden",
+            ),
+            "vitals total mismatch": (
+                lambda p: p.replace('data-total="1"', 'data-total="2"'),
+                "must match the 1 static component rows",
+            ),
+            "missing component count": (
+                lambda p: p.replace(
+                    '<span id="components-count">01</span>',
+                    '<span id="components-count"></span>',
+                ),
+                "#components-count",
             ),
         }
         for name, (mutate, expected) in cases.items():
@@ -391,28 +518,11 @@ class ValidateStatusTest(unittest.TestCase):
 
     def test_status_text_palette_meets_contrast_minimum(self) -> None:
         root = Path(__file__).resolve().parent.parent
-
-        def channel(value: int) -> float:
-            value = value / 255
-            return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
-
-        def luminance(color: str) -> float:
-            red, green, blue = (int(color[index : index + 2], 16) for index in (1, 3, 5))
-            return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
-
-        def ratio(foreground: str, background: str) -> float:
-            first, second = sorted((luminance(foreground), luminance(background)), reverse=True)
-            return (first + 0.05) / (second + 0.05)
-
         manifest = json.loads((root / "brand.manifest.json").read_text(encoding="utf-8"))
         brand_css = next(
             asset["file"] for asset in manifest["assets"] if asset["name"] == "brand.css"
         )
         stylesheet = (root / brand_css).read_text(encoding="utf-8")
-        variables = {
-            match.group(1): match.group(2)
-            for match in re.finditer(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});", stylesheet)
-        }
 
         pairs = {
             "ink on paper": ("--sbk-ink", "--sbk-paper"),
@@ -435,6 +545,65 @@ class ValidateStatusTest(unittest.TestCase):
             ),
             "unknown on unknown background": ("--sbk-unknown", "--sbk-unknown-bg"),
         }
+        for mode in ("light", "dark"):
+            variables = VALIDATOR.brand_properties(stylesheet, dark=(mode == "dark"))
+            for name, (foreground, background) in pairs.items():
+                with self.subTest(mode=mode, pair=name):
+                    self.assertIn(foreground, variables)
+                    self.assertIn(background, variables)
+                    measured = ratio(variables[foreground], variables[background])
+                    self.assertGreaterEqual(
+                        measured,
+                        4.5,
+                        f"{mode} {name} measured {measured:.2f}:1, "
+                        "below the 4.5:1 body-text minimum",
+                    )
+
+    def test_graphite_text_pairs_meet_contrast_minimum(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads((root / "brand.manifest.json").read_text(encoding="utf-8"))
+        brand_css = next(
+            asset["file"] for asset in manifest["assets"] if asset["name"] == "brand.css"
+        )
+        stylesheet = (root / brand_css).read_text(encoding="utf-8")
+        variables = VALIDATOR.brand_properties(stylesheet, dark=True)
+
+        pairs = {
+            "text on canvas": ("--sbk-text", "--sbk-canvas"),
+            "text on surface": ("--sbk-text", "--sbk-surface"),
+            "text on raised": ("--sbk-text", "--sbk-raised"),
+            "muted on canvas": ("--sbk-text-muted", "--sbk-canvas"),
+            "muted on surface": ("--sbk-text-muted", "--sbk-surface"),
+            "muted on raised": ("--sbk-text-muted", "--sbk-raised"),
+            "text on sunken": ("--sbk-text", "--sbk-sunken"),
+            "muted on sunken": ("--sbk-text-muted", "--sbk-sunken"),
+            "faint on sunken": ("--sbk-text-faint", "--sbk-sunken"),
+            "faint on canvas": ("--sbk-text-faint", "--sbk-canvas"),
+            "faint on surface": ("--sbk-text-faint", "--sbk-surface"),
+            "faint on raised": ("--sbk-text-faint", "--sbk-raised"),
+            "signal on canvas": ("--sbk-signal", "--sbk-canvas"),
+            "signal on sunken": ("--sbk-signal", "--sbk-sunken"),
+            "signal on signal soft": ("--sbk-signal", "--sbk-signal-soft"),
+            "text on signal soft": ("--sbk-text", "--sbk-signal-soft"),
+            "muted on signal soft": ("--sbk-text-muted", "--sbk-signal-soft"),
+            "on-signal on signal": ("--sbk-on-signal", "--sbk-signal"),
+            "text on danger soft": ("--sbk-text", "--sbk-danger-soft"),
+            "muted on danger soft": ("--sbk-text-muted", "--sbk-danger-soft"),
+            "muted on warning soft": ("--sbk-text-muted", "--sbk-warning-soft"),
+            "live on live soft": ("--sbk-live", "--sbk-live-soft"),
+            "warning on warning soft": ("--sbk-warning", "--sbk-warning-soft"),
+            "danger on danger soft": ("--sbk-danger", "--sbk-danger-soft"),
+            "maintenance on maintenance soft": (
+                "--sbk-maintenance",
+                "--sbk-maintenance-soft",
+            ),
+            "unknown on unknown soft": ("--sbk-unknown", "--sbk-unknown-soft"),
+            "live status word on canvas": ("--sbk-live", "--sbk-canvas"),
+            "warning status word on canvas": ("--sbk-warning", "--sbk-canvas"),
+            "danger status word on canvas": ("--sbk-danger", "--sbk-canvas"),
+            "maintenance status word on canvas": ("--sbk-maintenance", "--sbk-canvas"),
+            "unknown status word on canvas": ("--sbk-unknown", "--sbk-canvas"),
+        }
         for name, (foreground, background) in pairs.items():
             with self.subTest(pair=name):
                 self.assertIn(foreground, variables)
@@ -444,6 +613,64 @@ class ValidateStatusTest(unittest.TestCase):
                     measured,
                     4.5,
                     f"{name} measured {measured:.2f}:1, below the 4.5:1 body-text minimum",
+                )
+
+    def test_graphite_ui_boundaries_meet_contrast_minimum(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads((root / "brand.manifest.json").read_text(encoding="utf-8"))
+        brand_css = next(
+            asset["file"] for asset in manifest["assets"] if asset["name"] == "brand.css"
+        )
+        stylesheet = (root / brand_css).read_text(encoding="utf-8")
+        variables = VALIDATOR.brand_properties(stylesheet, dark=True)
+
+        # Interactive boundaries and non-text status indicators. Decorative
+        # hairlines are not controls and are not measured here.
+        pairs = {
+            "focus on canvas": ("--sbk-focus", "--sbk-canvas"),
+            "focus on danger soft": ("--sbk-focus", "--sbk-danger-soft"),
+            "focus on warning soft": ("--sbk-focus", "--sbk-warning-soft"),
+            "signal on danger soft": ("--sbk-signal", "--sbk-danger-soft"),
+            "live on canvas": ("--sbk-live", "--sbk-canvas"),
+            "warning on canvas": ("--sbk-warning", "--sbk-canvas"),
+            "danger on canvas": ("--sbk-danger", "--sbk-canvas"),
+            "maintenance on canvas": ("--sbk-maintenance", "--sbk-canvas"),
+            "unknown on canvas": ("--sbk-unknown", "--sbk-canvas"),
+            "live node on sunken": ("--sbk-live", "--sbk-sunken"),
+            "warning node on sunken": ("--sbk-warning", "--sbk-sunken"),
+            "danger node on sunken": ("--sbk-danger", "--sbk-sunken"),
+            "maintenance node on sunken": ("--sbk-maintenance", "--sbk-sunken"),
+            "unknown node on sunken": ("--sbk-unknown", "--sbk-sunken"),
+        }
+        for name, (foreground, background) in pairs.items():
+            with self.subTest(pair=name):
+                self.assertIn(foreground, variables)
+                self.assertIn(background, variables)
+                measured = ratio(variables[foreground], variables[background])
+                self.assertGreaterEqual(
+                    measured,
+                    3.0,
+                    f"{name} measured {measured:.2f}:1, below the 3:1 UI minimum",
+                )
+
+    def test_status_surface_is_graphite(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        manifest = json.loads((root / "brand.manifest.json").read_text(encoding="utf-8"))
+        brand_css = next(
+            asset["file"] for asset in manifest["assets"] if asset["name"] == "brand.css"
+        )
+        stylesheet = (root / brand_css).read_text(encoding="utf-8")
+        dark = VALIDATOR.brand_properties(stylesheet, dark=True)
+
+        self.assertEqual(dark.get("--sbk-canvas"), "#080A0F")
+        for name in ("index.html", "404.html"):
+            with self.subTest(page=name):
+                text = (root / name).read_text(encoding="utf-8")
+                self.assertIn('data-theme="dark"', text)
+                self.assertIn('<meta name="color-scheme" content="dark">', text)
+                self.assertIn(
+                    f'<meta name="theme-color" content="{dark["--sbk-canvas"]}">',
+                    text,
                 )
 
     def test_parse_utc_rejects_fractional_seconds(self) -> None:
