@@ -8,7 +8,10 @@
 
   const STATUS_URL = "status.json";
   const REFRESH_MS = 60_000;
-  const FETCH_TIMEOUT_MS = 15_000;
+  const FETCH_TIMEOUT_MS = 4_000;
+  const ERROR_GRACE_MS = 9_000;
+  const RETRY_DELAY_MS = 500;
+  const MAX_ATTEMPTS = 2;
 
   const INCIDENT_STATUSES = ["investigating", "identified", "monitoring", "resolved"];
   const INCIDENT_STATUS_SET = new Set(INCIDENT_STATUSES);
@@ -22,18 +25,32 @@
       brandHome: "SBK Techno, état du service",
       pageKicker: "Information publique",
       pageTitle: "État du service",
-      pageLede:
-        "L'état des services offerts aux clients et à l'équipe de SBK Techno, publié depuis la plateforme.",
       pageMetaStatic: "Page statique indépendante",
-      aboutLabel: "À propos",
       overallEyebrow: "État général",
       overallLead: "L'état du service est",
+      loadingWord: "en attente",
       loadingSummary: "Lecture de l'état publié dans status.json.",
       notDisplayed: "L'état publié n'est pas affiché.",
-      unconfirmedSummary: "L'état du service n'est pas confirmé.",
+      errorSummary: "La lecture a échoué. Le service n'est pas confirmé en panne.",
+      unknownNeverSummary:
+        "Aucun signal reçu : le service n'est pas confirmé en panne, et la page se met à jour dès qu'un signal arrive.",
+      unknownStaleSummary:
+        "Le dernier signal est trop ancien : le service n'est pas confirmé en panne, et la page se met à jour dès qu'un nouveau signal arrive.",
+      unknownFutureSummary:
+        "L'horodatage du signal est incohérent : le service n'est pas confirmé en panne, et la page se met à jour dès qu'un signal valide arrive.",
+      confirmedSummary: "L'état du service est confirmé par le dernier signal.",
       componentsTitle: "Composantes",
-      incidentsTitle: "Incidents",
       componentsTracked: "suivies",
+      componentsTrackedOne: "suivie",
+      componentsLoading: "Lecture de l'état publié...",
+      componentsCountLoading: "Lecture",
+      componentsCountError: "Indisponible",
+      componentsNoteFresh: "États issus du dernier signal.",
+      componentsNoteNever: "Les états ci-dessous restent inconnus.",
+      componentsNoteStale: "Les états ci-dessous ne sont pas confirmés.",
+      componentsNoteFuture: "Les états ci-dessous ne sont pas confirmés.",
+      componentsNoteLoading: "Lecture de l'état publié...",
+      incidentsTitle: "Incidents",
       incidentsNone: "Aucun",
       vitalsComponents: "composantes",
       vitalOperational: "Opérationnelles",
@@ -42,8 +59,9 @@
       vitalMaintenance: "Maintenance",
       vitalUnknown: "Inconnues",
       vitalSignals: "Signaux reçus",
-      heroChecked: "Dernière lecture",
-      sourceLabel: "Source",
+      heroSignal: "Dernier signal :",
+      heroChecked: "Dernière lecture :",
+      sourceLabel: "Source :",
       footerProduct: "Exploité par SBK Techno",
       footerSnapshot: "Instantané",
       footerSource: "Fichier publié",
@@ -51,24 +69,21 @@
       unavailable: "Indisponible",
       unknown: "Inconnu",
       staleTitle: "Signal périmé",
+      staleNeverTitle: "Aucun signal reçu",
       staleFutureTitle: "Horodatage incohérent",
-      staleNever:
-        "Aucun signal de vie n'a encore été reçu. L'état général et les composantes sont présentés comme inconnus.",
-      staleAged:
-        "Le dernier signal de vie est périmé. L'état général et les composantes sont présentés comme inconnus.",
-      staleFuture:
-        "L'horodatage publié est dans le futur. L'état général et les composantes sont présentés comme inconnus.",
+      staleNeverText:
+        "L'état général et les composantes restent inconnus.",
+      staleAgedText:
+        "L'état général et les composantes restent inconnus.",
+      staleFutureText:
+        "Le signal publié est daté dans le futur. Il n'est pas utilisé comme état courant.",
       errorTitle: "Impossible de lire l'état du service",
       errorText:
-        "Le fichier status.json n'a pas pu être chargé. Vérifiez votre connexion, puis réessayez.",
+        "Le fichier status.json n'a pas répondu. Vérifiez votre connexion, puis réessayez.",
       retry: "Réessayer",
       noComponents: "Aucune composante déclarée.",
       noIncidents: "Aucun incident déclaré. Le journal est vide pour cet instantané.",
       untitledIncident: "Incident sans titre",
-      componentObserved: "État au",
-      componentUnconfirmed: "Non confirmé",
-      componentDetailUnconfirmed:
-        "Le dernier signal de vie ne confirme pas cet état.",
       incidentStarted: "Début",
       incidentUpdated: "Mis à jour",
     },
@@ -80,18 +95,32 @@
       brandHome: "SBK Techno, service status",
       pageKicker: "Public information",
       pageTitle: "Service status",
-      pageLede:
-        "The status of the services provided to SBK Techno clients and staff, published from the platform.",
       pageMetaStatic: "Independent static page",
-      aboutLabel: "About",
       overallEyebrow: "Overall status",
       overallLead: "Service status is",
+      loadingWord: "waiting",
       loadingSummary: "Reading the published status from status.json.",
       notDisplayed: "The published status is not displayed.",
-      unconfirmedSummary: "Service status is unconfirmed.",
+      errorSummary: "The read failed. The service is not confirmed down.",
+      unknownNeverSummary:
+        "No signal received: the service is not confirmed down, and the page updates when a signal arrives.",
+      unknownStaleSummary:
+        "The last signal is too old: the service is not confirmed down, and the page updates when a new signal arrives.",
+      unknownFutureSummary:
+        "The signal timestamp is inconsistent: the service is not confirmed down, and the page updates when a valid signal arrives.",
+      confirmedSummary: "The service state is confirmed by the last signal.",
       componentsTitle: "Components",
-      incidentsTitle: "Incidents",
       componentsTracked: "tracked",
+      componentsTrackedOne: "tracked",
+      componentsLoading: "Reading the published status...",
+      componentsCountLoading: "Reading",
+      componentsCountError: "Unavailable",
+      componentsNoteFresh: "States from the last signal.",
+      componentsNoteNever: "The states below remain unknown.",
+      componentsNoteStale: "The states below are not confirmed.",
+      componentsNoteFuture: "The states below are not confirmed.",
+      componentsNoteLoading: "Reading the published status...",
+      incidentsTitle: "Incidents",
       incidentsNone: "None",
       vitalsComponents: "components",
       vitalOperational: "Operational",
@@ -100,8 +129,9 @@
       vitalMaintenance: "Maintenance",
       vitalUnknown: "Unknown",
       vitalSignals: "Signals received",
-      heroChecked: "Last read",
-      sourceLabel: "Source",
+      heroSignal: "Last signal:",
+      heroChecked: "Last read:",
+      sourceLabel: "Source:",
       footerProduct: "Operated by SBK Techno",
       footerSnapshot: "Snapshot",
       footerSource: "Published file",
@@ -109,24 +139,21 @@
       unavailable: "Unavailable",
       unknown: "Unknown",
       staleTitle: "Stale signal",
+      staleNeverTitle: "No signal received",
       staleFutureTitle: "Inconsistent timestamp",
-      staleNever:
-        "No heartbeat has been received yet. The overall state and the components are shown as unknown.",
-      staleAged:
-        "The last heartbeat is stale. The overall state and the components are shown as unknown.",
-      staleFuture:
-        "The published timestamp is in the future. The overall state and the components are shown as unknown.",
+      staleNeverText:
+        "The overall state and the components remain unknown.",
+      staleAgedText:
+        "The overall state and the components remain unknown.",
+      staleFutureText:
+        "The published signal is dated in the future. It is not used as the current state.",
       errorTitle: "Unable to read the service status",
       errorText:
-        "The status.json file could not be loaded. Check your connection and try again.",
+        "The status.json file did not respond. Check your connection and try again.",
       retry: "Try again",
       noComponents: "No components declared.",
       noIncidents: "No declared incidents. The journal is empty for this snapshot.",
       untitledIncident: "Untitled incident",
-      componentObserved: "State at",
-      componentUnconfirmed: "Unconfirmed",
-      componentDetailUnconfirmed:
-        "The last heartbeat does not confirm this state.",
       incidentStarted: "Started",
       incidentUpdated: "Updated",
     },
@@ -187,6 +214,8 @@
 
   const VITAL_KEYS = ["operational", "degraded", "outage", "maintenance", "unknown"];
   const VITAL_GAP = 0.8;
+  const UNKNOWN_DASH = 1.2;
+  const UNKNOWN_GAP = 2;
 
   const state = {
     lang: readLang(),
@@ -203,6 +232,7 @@
     hero: document.getElementById("hero"),
     heroStatus: document.getElementById("hero-status-text"),
     summary: document.getElementById("overall-summary"),
+    heroSignal: document.getElementById("hero-signal"),
     heroChecked: document.getElementById("hero-checked"),
     snapshotTime: document.getElementById("snapshot-time"),
     staleBanner: document.getElementById("stale-banner"),
@@ -211,6 +241,7 @@
     errorBanner: document.getElementById("fetch-error"),
     retry: document.getElementById("retry-button"),
     componentsList: document.getElementById("components-list"),
+    componentsNote: document.getElementById("components-note"),
     componentsEmpty: document.getElementById("components-empty"),
     componentsCount: document.getElementById("components-count"),
     incidentsList: document.getElementById("incidents-list"),
@@ -351,58 +382,66 @@
   }
 
   function renderStaleBanner(current) {
-    if (!current.showStaleBanner) {
+    if (current.banner !== "stale") {
       els.staleBanner.hidden = true;
       return;
     }
-    const future = current.reason === "future";
-    setText(els.staleTitle, t(future ? "staleFutureTitle" : "staleTitle"));
-    let text = "staleAged";
-    if (current.reason === "never") text = "staleNever";
-    else if (future) text = "staleFuture";
-    setText(els.staleText, t(text));
+    setText(els.staleTitle, t(current.bannerTitle));
+    setText(els.staleText, t(current.bannerText));
+    els.staleBanner.setAttribute("data-reason", current.reason);
     els.staleBanner.hidden = false;
   }
 
+  function renderSignalTime(current) {
+    for (const node of [els.heroSignal, els.snapshotTime]) {
+      if (!node) continue;
+      if (current.snapshot === "none") {
+        setText(node, t("noSnapshot"));
+        node.removeAttribute("title");
+      } else if (current.snapshot === "generated" && current.generated !== null) {
+        setStamp(node, current.generated);
+      } else {
+        setText(node, t("unknown"));
+        node.removeAttribute("title");
+      }
+    }
+  }
+
   function renderUnavailable(current) {
+    const loading = current.mode === "loading";
     els.hero.setAttribute("data-status", "unknown");
-    setText(els.heroStatus, OVERALL_WORDS[state.lang].unknown);
+    els.hero.setAttribute("data-mode", current.mode);
+    setText(els.heroStatus, loading ? t("loadingWord") : OVERALL_WORDS[state.lang].unknown);
     setText(els.summary, t(current.summary));
-    setText(els.heroChecked, t("unknown"));
-    setText(els.snapshotTime, t("unknown"));
-    setText(els.componentsCount, t("notDisplayed"));
-    setText(els.incidentsCount, t("notDisplayed"));
+    renderSignalTime(current);
+    setText(
+      els.componentsCount,
+      loading ? t("componentsCountLoading") : t("componentsCountError"),
+    );
+    setText(
+      els.incidentsCount,
+      loading ? t("componentsCountLoading") : t("componentsCountError"),
+    );
     els.componentsList.replaceChildren();
     els.incidentsList.replaceChildren();
+    if (els.componentsNote) els.componentsNote.hidden = true;
     els.componentsEmpty.hidden = false;
-    setText(els.componentsEmpty, t("notDisplayed"));
+    setText(els.componentsEmpty, loading ? t("componentsLoading") : t("notDisplayed"));
     els.incidentsEmpty.hidden = false;
-    setText(els.incidentsEmpty, t("notDisplayed"));
+    setText(els.incidentsEmpty, loading ? t("componentsLoading") : t("notDisplayed"));
     els.vitals.hidden = true;
   }
 
   function renderHero(payload, current) {
     els.hero.setAttribute("data-status", current.headline);
+    els.hero.setAttribute("data-mode", current.mode);
     setText(els.heroStatus, OVERALL_WORDS[state.lang][current.headline]);
     setText(
       els.summary,
       current.summary === "payload"
-        ? pick(payload, "summary") || t("unconfirmedSummary")
+        ? pick(payload, "summary") || t("confirmedSummary")
         : t(current.summary),
     );
-  }
-
-  function renderSnapshot(current) {
-    if (!els.snapshotTime) return;
-    if (current.snapshot === "none") {
-      setText(els.snapshotTime, t("noSnapshot"));
-      return;
-    }
-    if (current.snapshot !== "generated" || current.generated === null) {
-      setText(els.snapshotTime, t("unknown"));
-      return;
-    }
-    setStamp(els.snapshotTime, current.generated);
   }
 
   function setSignalValue(signals, total) {
@@ -420,10 +459,29 @@
     els.vitalsSignalValue.replaceChildren(value, "/", totalNode);
   }
 
+  function dashedArc(length) {
+    if (length <= 0) return "0 100";
+    if (length >= 99.999) return `${UNKNOWN_DASH} ${UNKNOWN_GAP}`;
+    const parts = [];
+    let remaining = length;
+    while (remaining > 0.001) {
+      const dash = Math.min(UNKNOWN_DASH, remaining);
+      parts.push(dash.toFixed(3).replace(/\.?0+$/, ""));
+      remaining -= dash;
+      if (remaining <= 0.001) break;
+      const gap = Math.min(UNKNOWN_GAP, remaining);
+      parts.push(gap.toFixed(3).replace(/\.?0+$/, ""));
+      remaining -= gap;
+    }
+    const tail = 100 - length;
+    if (tail > 0.001) parts.push(tail.toFixed(3).replace(/\.?0+$/, ""));
+    return parts.join(" ");
+  }
+
   function updateVitals(total, counts, signalMode) {
     els.vitals.setAttribute("data-total", String(total));
-    setText(els.vitalsTotal, pad2(total));
-    setText(els.vitalsNumber, pad2(total));
+    setText(els.vitalsTotal, String(total));
+    setText(els.vitalsNumber, String(total));
 
     if (els.vitalsScale) {
       const gap = total > 0 ? `${VITAL_GAP} ${100 / total - VITAL_GAP}` : "0 100";
@@ -436,7 +494,10 @@
       const length = total > 0 ? (count / total) * 100 : 0;
       const segment = els.vitalSegments.get(key);
       if (segment) {
-        segment.setAttribute("stroke-dasharray", `${length} 100`);
+        segment.setAttribute(
+          "stroke-dasharray",
+          key === "unknown" ? dashedArc(length) : `${length} 100`,
+        );
         segment.setAttribute("stroke-dashoffset", String(-offset));
       }
       const label = els.vitalCounts.get(key);
@@ -457,7 +518,6 @@
 
   function renderComponents(payload, current) {
     els.componentsList.replaceChildren();
-    const generated = current.generated;
     const forced = current.forceUnknown;
     const counts = {
       operational: 0,
@@ -489,41 +549,28 @@
         pick(component, "label") ||
         (nonEmpty(component.id) ? component.id : t("unavailable"));
 
-      const detailText = pick(component, "detail");
-      const detail = document.createElement("p");
-      detail.className = "component-detail";
-      detail.textContent = forced
-        ? t("componentDetailUnconfirmed")
-        : detailText || t("unavailable");
-
       const side = document.createElement("div");
       side.className = "component-side";
       side.append(makePill(status, STATUS_LABELS[state.lang][status]));
 
-      const meta = document.createElement("p");
-      meta.className = "component-meta";
-      const metaLabel = document.createElement("span");
-      metaLabel.className = "micro";
-      meta.append(metaLabel);
-      if (forced) {
-        // Every unconfirmed state (missing, future, aged, expired, or failed
-        // read) treats the payload status as a last report, not a current
-        // state, so no time is presented as a verification.
-        metaLabel.textContent = t("componentUnconfirmed");
-      } else {
-        metaLabel.textContent = t("componentObserved");
-        meta.append(createTime(generated));
-      }
-      side.append(meta);
-
-      item.append(index, name, detail, side);
+      item.append(index, name, side);
       els.componentsList.append(item);
     }
 
-    setText(els.componentsCount, `${pad2(rendered)} ${t("componentsTracked")}`);
+    setText(
+      els.componentsCount,
+      `${rendered} ${t(rendered === 1 ? "componentsTrackedOne" : "componentsTracked")}`,
+    );
     updateVitals(rendered, counts, current.signal);
     els.componentsEmpty.hidden = rendered > 0;
     if (rendered === 0) setText(els.componentsEmpty, t("noComponents"));
+
+    if (rendered > 0 && current.note && els.componentsNote) {
+      setText(els.componentsNote, t(current.note));
+      els.componentsNote.hidden = false;
+    } else if (els.componentsNote) {
+      els.componentsNote.hidden = true;
+    }
   }
 
   function addIncidentTime(parent, labelKey, value) {
@@ -626,7 +673,7 @@
   }
 
   function renderChecked() {
-    if (!state.data || state.lastChecked === null) {
+    if (state.lastChecked === null) {
       setText(els.heroChecked, t("unknown"));
       return;
     }
@@ -640,12 +687,12 @@
     applyStaticTranslations();
     const current = model.presentation(state.data, state.hasError, Date.now());
 
-    renderErrorBanner(current.mode === "error");
+    renderErrorBanner(current.banner === "error");
     renderStaleBanner(current);
 
     if (current.showData) {
       renderHero(state.data, current);
-      renderSnapshot(current);
+      renderSignalTime(current);
       renderComponents(state.data, current);
       renderIncidents(state.data);
       els.vitals.hidden = !current.showVitals;
@@ -656,16 +703,16 @@
     renderChecked();
   }
 
-  async function refresh() {
-    if (state.fetching) return;
-    state.fetching = true;
-    if (els.retry) els.retry.disabled = true;
+  function wait(ms) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
 
-    let timeoutId = null;
+  async function fetchOnce() {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const controller = new AbortController();
-      timeoutId = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
       const url = new URL(STATUS_URL, window.location.href);
       url.searchParams.set("t", Date.now().toString(36));
       const response = await fetch(url, {
@@ -677,15 +724,51 @@
       if (!response.ok) throw new Error("HTTP " + response.status);
       const payload = await response.json();
       assertPayload(payload);
-      state.data = payload;
-      state.hasError = false;
-      // Only a successful read may move the check time. A failed attempt
-      // leaves the last successful read visible, or unknown before the first.
-      state.lastChecked = Date.now();
-    } catch {
-      state.hasError = true;
+      return payload;
     } finally {
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  async function refresh({ manual = false } = {}) {
+    if (state.fetching) return;
+    state.fetching = true;
+    if (els.retry) els.retry.disabled = true;
+
+    if (manual) {
+      // A retry starts a new read. The error state must not keep the previous
+      // payload on screen while the new attempt is in flight.
+      state.data = null;
+      state.hasError = false;
+      renderAll();
+    }
+
+    const started = Date.now();
+    let attempt = 0;
+    try {
+      while (true) {
+        attempt += 1;
+        try {
+          const payload = await fetchOnce();
+          state.data = payload;
+          state.hasError = false;
+          // Only a successful read may move the check time. A failed attempt
+          // leaves the last successful read visible, or unknown before the first.
+          state.lastChecked = Date.now();
+          return;
+        } catch {
+          const elapsed = Date.now() - started;
+          if (attempt < MAX_ATTEMPTS && elapsed < ERROR_GRACE_MS) {
+            await wait(RETRY_DELAY_MS);
+            continue;
+          }
+          const remaining = ERROR_GRACE_MS - elapsed;
+          if (remaining > 0) await wait(remaining);
+          state.hasError = true;
+          return;
+        }
+      }
+    } finally {
       state.fetching = false;
       if (els.retry) els.retry.disabled = false;
       renderAll();
@@ -731,7 +814,11 @@
     for (const button of els.langButtons) {
       button.addEventListener("click", () => setLang(button.dataset.lang));
     }
-    if (els.retry) els.retry.addEventListener("click", () => refresh());
+    if (els.retry) {
+      els.retry.addEventListener("click", () => {
+        refresh({ manual: true });
+      });
+    }
     document.addEventListener("visibilitychange", handleVisibilityChange);
   }
 

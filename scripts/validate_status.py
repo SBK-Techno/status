@@ -563,6 +563,23 @@ def validate_no_js_snapshot(name: str, text: str) -> list[str]:
                 f"{name}: #{element_id} must not claim a count before status.json is read"
             )
 
+    for element_id in ("fetch-error", "stale-banner"):
+        node = next(page.find_all(element_id=element_id), None)
+        if node is None:
+            errors.append(f"{name}: missing #{element_id}")
+        elif "hidden" not in node.attrs:
+            errors.append(
+                f"{name}: #{element_id} must stay hidden until its own presentation state is active"
+            )
+
+    components_note = next(page.find_all(element_id="components-note"), None)
+    if components_note is None:
+        errors.append(f"{name}: missing #components-note")
+    elif "hidden" not in components_note.attrs:
+        errors.append(
+            f"{name}: #components-note must stay hidden before status.json is read"
+        )
+
     components_empty = next(page.find_all(element_id="components-empty"), None)
     if components_empty is None or "hidden" in components_empty.attrs:
         errors.append(
@@ -823,9 +840,6 @@ def validate_page(
                 heading = next(row.find_all("h3"), None)
                 if heading is None or not heading.text().strip():
                     errors.append(f"{name}: component row {index} needs a component name")
-                detail = next(row.find_all("p", class_name="component-detail"), None)
-                if detail is None or not detail.text().strip():
-                    errors.append(f"{name}: component row {index} needs a component detail")
                 pill = next(row.find_all("span", class_name="pill"), None)
                 if pill is None or not pill.text().strip():
                     errors.append(f"{name}: component row {index} needs a text status label")
@@ -834,11 +848,50 @@ def validate_page(
                         f"{name}: component row {index} has invalid status "
                         f"{pill.attrs.get('data-status')!r}"
                     )
-                meta = next(row.find_all("p", class_name="component-meta"), None)
-                if meta is None or not meta.text().strip():
+                if next(row.find_all("p"), None) is not None:
                     errors.append(
-                        f"{name}: component row {index} needs a snapshot note"
+                        f"{name}: component row {index} must stay compact; "
+                        "move shared explanation to #components-note"
                     )
+                if next(row.find_all("p", class_name="component-detail"), None) is not None:
+                    errors.append(
+                        f"{name}: component row {index} must not repeat the "
+                        "unconfirmed explanation"
+                    )
+
+        components_note = next(root.find_all(element_id="components-note"), None)
+        if components_note is None or not components_note.text().strip():
+            errors.append(f"{name}: #components-note must carry the shared row explanation")
+        if len(list(root.find_all(element_id="components-note"))) != 1:
+            errors.append(f"{name}: #components-note must appear exactly once")
+
+        error_banners = list(root.find_all(element_id="fetch-error"))
+        stale_banners = list(root.find_all(element_id="stale-banner"))
+        if len(error_banners) != 1:
+            errors.append(f"{name}: #fetch-error must appear exactly once")
+        if len(stale_banners) != 1:
+            errors.append(f"{name}: #stale-banner must appear exactly once")
+        error_banner = error_banners[0] if error_banners else None
+        stale_banner = stale_banners[0] if stale_banners else None
+        if error_banner is not None and stale_banner is not None:
+            if "hidden" not in error_banner.attrs and "hidden" not in stale_banner.attrs:
+                errors.append(
+                    f"{name}: the fetch error and the stale notice must never "
+                    "be visible together"
+                )
+        if error_banner is not None:
+            if error_banner.attrs.get("role", "").strip().lower() != "alert":
+                errors.append(f"{name}: #fetch-error must use role='alert'")
+            retries = list(error_banner.find_all(element_id="retry-button"))
+            if (
+                len(retries) != 1
+                or retries[0].tag != "button"
+                or not retries[0].text().strip()
+            ):
+                errors.append(f"{name}: #fetch-error must contain exactly one retry button")
+        if stale_banner is not None:
+            if stale_banner.attrs.get("role", "").strip().lower() != "status":
+                errors.append(f"{name}: #stale-banner must use role='status'")
 
         component_count = next(root.find_all(element_id="components-count"), None)
         if component_count is None or not component_count.text().strip():
@@ -884,6 +937,16 @@ def validate_page(
                 errors.append(
                     f"{name}: #vitals data-total {total!r} must match the "
                     f"{len(rows)} static component rows"
+                )
+            segments = {
+                node.attrs.get("data-vital", "")
+                for node in vitals.find_all("circle", class_name="vitals__segment")
+            }
+            expected_segments = {"operational", "degraded", "outage", "maintenance", "unknown"}
+            if segments != expected_segments:
+                errors.append(
+                    f"{name}: #vitals must declare all five status segments; "
+                    f"found {sorted(segments)}"
                 )
 
         empty = next(root.find_all(element_id="components-empty"), None)

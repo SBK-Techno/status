@@ -45,11 +45,22 @@ The platform command `cmd/brandlint` is the design gate for every SBK-operated s
 
 ## Presentation
 
-The public board is a graphite surface (`data-theme="dark"`). It opens on a full-viewport panel with a text status word in the status colour, a monospaced check time, and a compact inline-SVG vitals instrument on the right. The instrument is decorative and `aria-hidden`; its arcs and counts mirror the component board, which is the accessible source of the same facts. The component rows and the incident timeline are separated by hairlines rather than cards. The theme colour is the dark canvas token, not a second literal.
+The public board is a graphite surface (`data-theme="dark"`). It opens with a text status word in the status colour, a monospaced read time, and a compact inline-SVG vitals instrument on the right. The instrument is decorative and `aria-hidden`; its arcs and counts mirror the component board, which is the accessible source of the same facts. The component rows and the incident timeline are separated by hairlines rather than cards. The theme colour is the dark canvas token, not a second literal.
+
+`presentation()` in `status-model.js` is the single owner of every visible decision. It returns exactly one mode: `loading`, `fresh`, `stale`, or `error`. It also returns exactly one banner: `null`, `stale`, or `error`. The renderer does not combine the payload, the error flag, and freshness by itself, so the headline, the rows, the vitals count, and the notice cannot disagree.
+
+- `loading`: on first load the page says `L'état du service est en attente` and `Lecture de l'état publié dans status.json.` with no alert. A short bounded read window retries quietly. The error view appears only after that window ends.
+- `fresh`: the publisher's confirmed status and summary are shown. This is the only state that repeats the publisher summary.
+- `stale`: a missing, empty, future, expired, or aged heartbeat shows `L'état du service est inconnu`, one plain sentence that the service is not confirmed down and the page updates when a signal arrives, `Dernier signal`, `Dernière lecture`, and the source link. The stale notice sits above the hero.
+- `error`: one error notice with one retry action, no rows, no vitals, and no counts. A failed read never shows the stale notice at the same time.
+
+The vitals instrument uses solid arcs only for confirmed component states. Unknown segments are dashed and muted, so a fully unknown board never looks like a solid healthy ring. The centre is a plain count such as `5 composantes`, never a zero-padded `05`. The legend counts the same components.
+
+The component board is a compact list: an index, a name, and a status badge. One shared line above the list explains the state for every row. The page does not repeat the same sentence five times.
 
 The static HTML does not claim a status, a count, or a time it has not read. With JavaScript disabled the page says `L'état publié n'est pas affiché`, shows no component rows, no numeric count, no instrument, no hard-coded timestamps, keeps the `<noscript>` note, and links `status.json`; the language switch and the check time stay hidden. The same phrase is the single fallback used by the hero, the component board, and the incident journal.
 
-The error and stale banners sit above the hero, so a failed read or an unconfirmed heartbeat is visible on the first screen at every width.
+At most one notice sits above the hero, so a failed read or an unconfirmed heartbeat is visible on the first screen at every width without two contradictory failures.
 
 ## Hosting and DNS
 
@@ -69,14 +80,16 @@ The host reads the key from `/run/secrets/status-heartbeat-hmac` and a fine-grai
 
 The page fetches the file every 60 seconds with `cache: "no-store"` and a cache-busting query. It refreshes immediately when the tab becomes visible after being hidden, and it does not poll while hidden.
 
+On first load the page stays in the quiet loading state while a bounded read window retries. The error view appears after that window ends, with one retry action. A manual retry clears the retained payload and returns to loading, so an old snapshot is never shown while the new read is in flight. A failed read never shows a stale notice at the same time.
+
 Freshness rules:
 
 - `generated_at` is null, empty, or unparseable: no heartbeat. `overall` and every component must be `unknown`; the validator rejects a document that claims a healthy state without a heartbeat.
 - `generated_at` is more than 5 minutes in the future: invalid. Both the validator and the page reject the claim instead of treating the negative age as fresh.
 - `expires_at` is in the past, or `generated_at` is older than 15 minutes: stale.
-- Any missing, empty, future, expired, or aged heartbeat forces the headline, every component row, and the vitals signal count to `unknown`, shows no verification time on a row, and opens with the stale banner above the hero. The document's own summary is never repeated as a current claim.
-- An expired or aged heartbeat still shows its `generated_at` as the snapshot time, because that timestamp is the last signal, not a current confirmation. The rows stay unknown and the banner explains why.
-- A failed fetch renders the unavailable view even when a previous payload is retained: no rows, no vitals, and no counts from the old document, component and incident counts `L'état publié n'est pas affiché`, and the error banner above the hero. The check time keeps the last successful read time, or `Inconnu` before the first read; a failed attempt never moves it.
+- Any missing, empty, future, expired, or aged heartbeat forces the headline, every component row, and the vitals signal count to `unknown`, shows no per-row verification time, and opens with the stale notice above the hero. The document's own summary is never repeated as a current claim.
+- An expired or aged heartbeat still shows its `generated_at` as the last signal and snapshot time, because that timestamp is the last signal, not a current confirmation. The rows stay unknown and the notice explains why.
+- A failed fetch renders the unavailable view even when a previous payload is retained: no rows, no vitals, and no counts from the old document, component and incident counts read `Indisponible`, and one error notice with one retry action sits above the hero. The check time keeps the last successful read time, or `Inconnu` before the first read; a failed attempt never moves it.
 
 The publisher writes `generated_at` and `expires_at` in UTC. `expires_at` is at most 15 minutes after `generated_at`. The page treats the signal as stale after that window even if `expires_at` is later, so the timer must run more often than 15 minutes. Incidents stay operator-owned: the publisher copies them from its configured incident file and never invents or resolves one.
 
@@ -171,14 +184,16 @@ The workflow checks:
 - The published assets match the SHA-256 digests and byte sizes in `brand.manifest.json`, verified by both the workflow and `validate_manifest_assets`.
 - `index.html` and `404.html` reference every published asset and contain no unresolved placeholder.
 - `status.json` passes `scripts/validate_status.py`: schema version 1, valid statuses, unique ids, both languages, UTC `Z` timestamps, paired `generated_at`/`expires_at`, a lifetime of at most 15 minutes, no heartbeat more than 5 minutes in the future, and no healthy claim when `generated_at` is null.
-- The no-JS snapshot is checked: it has no `<time>`, no hard-coded timestamp, no component rows, no numeric count, a hidden vitals instrument, and the single `L'état publié n'est pas affiché` fallback.
+- The no-JS snapshot is checked: it has no `<time>`, no hard-coded timestamp, no component rows, no numeric count, a hidden vitals instrument, hidden notices and a hidden shared row note, and the single `L'état publié n'est pas affiché` fallback.
+- The presentation contract is checked: both notices exist and stay hidden without JavaScript, the fetch notice has role `alert` and exactly one retry button, the stale notice has role `status`, both notices cannot be visible together, the shared row note exists, and each component row stays compact with no paragraph detail.
+- The vitals instrument declares all five status segments so an unknown ring can never fall back to a solid healthy arc.
 - The header mark is measured from the file the page references and the surface `.status-header` paints; recoloured fills, a changed surface, and a header-size override fail.
 - Every incident has the required fields and `updated_at` is not before `started_at`.
 - The same validator runs in `publish.yml` before a signed heartbeat is committed.
 - `CNAME` is exactly `status.ia.sbktechno.com` with a final newline.
 - `index.html`, `styles.css`, `app.js`, and `status-model.js` exist and are non-empty.
 
-`make validate` runs the JSON parse and delegates to the platform generator check locally. `python3 -m unittest discover -s scripts -p '*_test.py'` also runs `scripts/status_model_test.mjs` through Node so the fresh, null, future, aged, expired, and failed-fetch render states are gated with the browser model.
+`make validate` runs the JSON parse and delegates to the platform generator check locally. `python3 -m unittest discover -s scripts -p '*_test.py'` also runs `scripts/status_model_test.mjs` through Node so loading, fresh, stale, null, future, aged, expired, and failed-fetch render states are gated with the browser model, including the single-banner invariant and the compact-row layout contract.
 
 No third-party action is used beyond `actions/checkout`.
 

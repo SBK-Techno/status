@@ -63,16 +63,47 @@
     return { stale: false, reason: "fresh", generated };
   }
 
+  function snapshotFor(reason, generated) {
+    if (reason === "never") return "none";
+    if (reason === "future" || generated === null) return "unknown";
+    return "generated";
+  }
+
+  function bannerCopy(reason) {
+    if (reason === "never") {
+      return { title: "staleNeverTitle", text: "staleNeverText" };
+    }
+    if (reason === "future") {
+      return { title: "staleFutureTitle", text: "staleFutureText" };
+    }
+    return { title: "staleTitle", text: "staleAgedText" };
+  }
+
+  function summaryFor(reason) {
+    if (reason === "never") return "unknownNeverSummary";
+    if (reason === "future") return "unknownFutureSummary";
+    return "unknownStaleSummary";
+  }
+
+  function noteFor(reason) {
+    if (reason === "never") return "componentsNoteNever";
+    if (reason === "future") return "componentsNoteFuture";
+    return "componentsNoteStale";
+  }
+
   /*
    * One presentation state owns every visible decision. The renderer must not
    * combine the payload, the error flag, and freshness by itself: that is how
    * the headline, the rows, the vitals count, and the banner came to disagree.
    *
-   * Every unconfirmed state (never, future, expired, aged, or a failed read)
-   * forces the headline and every component row to unknown, reports the signal
-   * count as unknown, and never reuses the payload summary as a current claim.
-   * A failed read also hides the rows and the vitals instrument entirely: the
-   * retained payload is not a reading, so it must not supply counts.
+   * `mode` is exactly one of loading, fresh, stale, or error. `banner` is
+   * exactly one of null, stale, or error, so an error and a stale notice can
+   * never be shown together. Every unconfirmed state (never, future, expired,
+   * aged, or a failed read) forces the headline and every component row to
+   * unknown, reports the signal count as unknown, and never reuses the payload
+   * summary as a current claim. A failed read also hides the rows and the
+   * vitals instrument entirely: the retained payload is not a reading, so it
+   * must not supply counts.
    *
    * `summary` is either a message key or "payload"; only a fresh state may
    * render the publisher's own summary.
@@ -86,12 +117,17 @@
         mode: hasError ? "error" : "loading",
         reason: hasError ? "error" : "loading",
         headline: "unknown",
-        summary: hasError ? "notDisplayed" : "loadingSummary",
+        summary: hasError ? "errorSummary" : "loadingSummary",
+        banner: hasError ? "error" : null,
+        bannerTitle: hasError ? "errorTitle" : null,
+        bannerText: hasError ? "errorText" : null,
+        note: hasError ? null : "componentsNoteLoading",
         confirmed: false,
         forceUnknown: true,
         showData: false,
         showVitals: false,
         showStaleBanner: false,
+        showErrorBanner: hasError,
         snapshot: "unknown",
         signal: "unknown",
         generated: null,
@@ -103,12 +139,17 @@
         mode: "error",
         reason: "error",
         headline: "unknown",
-        summary: "notDisplayed",
+        summary: "errorSummary",
+        banner: "error",
+        bannerTitle: "errorTitle",
+        bannerText: "errorText",
+        note: null,
         confirmed: false,
         forceUnknown: true,
         showData: false,
         showVitals: false,
         showStaleBanner: false,
+        showErrorBanner: true,
         snapshot: "unknown",
         signal: "unknown",
         generated: null,
@@ -116,25 +157,46 @@
     }
 
     const state = freshness(payload, current);
-    const confirmed = !state.stale;
+    if (state.stale) {
+      const banner = bannerCopy(state.reason);
+      return {
+        mode: "stale",
+        reason: state.reason,
+        headline: "unknown",
+        summary: summaryFor(state.reason),
+        banner: "stale",
+        bannerTitle: banner.title,
+        bannerText: banner.text,
+        note: noteFor(state.reason),
+        confirmed: false,
+        forceUnknown: true,
+        showData: true,
+        showVitals: true,
+        showStaleBanner: true,
+        showErrorBanner: false,
+        snapshot: snapshotFor(state.reason, state.generated),
+        signal: "unknown",
+        generated: state.generated,
+      };
+    }
 
     return {
-      mode: confirmed ? "fresh" : state.reason,
-      reason: state.reason,
-      headline: confirmed ? normalizeStatus(payload.overall) : "unknown",
-      summary: confirmed ? "payload" : "unconfirmedSummary",
-      confirmed,
-      forceUnknown: !confirmed,
+      mode: "fresh",
+      reason: "fresh",
+      headline: normalizeStatus(payload.overall),
+      summary: "payload",
+      banner: null,
+      bannerTitle: null,
+      bannerText: null,
+      note: "componentsNoteFresh",
+      confirmed: true,
+      forceUnknown: false,
       showData: true,
       showVitals: true,
-      showStaleBanner: state.stale,
-      snapshot:
-        state.generated === null
-          ? "none"
-          : state.reason === "future"
-            ? "unknown"
-            : "generated",
-      signal: confirmed ? "count" : "unknown",
+      showStaleBanner: false,
+      showErrorBanner: false,
+      snapshot: "generated",
+      signal: "count",
       generated: state.generated,
     };
   }

@@ -25,26 +25,29 @@ function state(overrides = {}, hasError = false) {
   return model.presentation({ ...operational, ...overrides }, hasError, now);
 }
 
-function assertUnconfirmed(current, reason) {
-  assert.equal(current.reason, reason);
-  assert.equal(current.confirmed, false);
-  assert.equal(current.forceUnknown, true);
-  assert.equal(current.headline, "unknown");
-  assert.notEqual(current.summary, "payload");
-  assert.equal(current.signal, "unknown");
-  assert.equal(current.showStaleBanner, true);
+const states = [];
+function track(current) {
+  states.push(current);
+  return current;
 }
 
 // A fresh heartbeat is the only state allowed to repeat the publisher claim.
 {
-  const fresh = model.presentation(operational, false, now);
+  const fresh = track(model.presentation(operational, false, now));
   assert.equal(fresh.mode, "fresh");
   assert.equal(fresh.reason, "fresh");
   assert.equal(fresh.headline, "operational");
   assert.equal(fresh.summary, "payload");
+  assert.equal(fresh.banner, null);
+  assert.equal(fresh.bannerTitle, null);
+  assert.equal(fresh.bannerText, null);
+  assert.equal(fresh.note, "componentsNoteFresh");
   assert.equal(fresh.confirmed, true);
   assert.equal(fresh.forceUnknown, false);
+  assert.equal(fresh.showData, true);
+  assert.equal(fresh.showVitals, true);
   assert.equal(fresh.showStaleBanner, false);
+  assert.equal(fresh.showErrorBanner, false);
   assert.equal(fresh.snapshot, "generated");
   assert.equal(fresh.signal, "count");
   assert.equal(fresh.generated, Date.parse("2026-10-25T11:59:00Z"));
@@ -55,25 +58,41 @@ for (const [name, generated] of [
   ["null", null],
   ["empty", ""],
 ]) {
-  const current = state({ generated_at: generated, expires_at: generated });
-  assertUnconfirmed(current, "never");
+  const current = track(state({ generated_at: generated, expires_at: generated }));
+  assert.equal(current.mode, "stale", `${name}: a missing heartbeat is not loading`);
+  assert.equal(current.reason, "never");
+  assert.equal(current.confirmed, false);
+  assert.equal(current.forceUnknown, true);
+  assert.equal(current.headline, "unknown", `${name}: an operational payload cannot supply the headline`);
+  assert.equal(current.summary, "unknownNeverSummary");
+  assert.equal(current.banner, "stale");
+  assert.equal(current.bannerTitle, "staleNeverTitle");
+  assert.equal(current.bannerText, "staleNeverText");
+  assert.equal(current.note, "componentsNoteNever");
+  assert.equal(current.showStaleBanner, true);
+  assert.equal(current.showErrorBanner, false);
+  assert.equal(current.showData, true);
+  assert.equal(current.showVitals, true);
+  assert.equal(current.signal, "unknown");
   assert.equal(current.snapshot, "none");
   assert.equal(current.generated, null);
-  assert.equal(
-    current.headline,
-    "unknown",
-    `${name}: an operational payload cannot supply the headline`,
-  );
 }
 
 // A heartbeat beyond the tolerated clock skew is not fresh, even though its
 // age is negative.
 {
-  const current = state({
-    generated_at: "2026-10-25T13:00:00Z",
-    expires_at: "2026-10-25T13:05:00Z",
-  });
-  assertUnconfirmed(current, "future");
+  const current = track(
+    state({
+      generated_at: "2026-10-25T13:00:00Z",
+      expires_at: "2026-10-25T13:05:00Z",
+    }),
+  );
+  assert.equal(current.mode, "stale");
+  assert.equal(current.reason, "future");
+  assert.equal(current.summary, "unknownFutureSummary");
+  assert.equal(current.bannerTitle, "staleFutureTitle");
+  assert.equal(current.bannerText, "staleFutureText");
+  assert.equal(current.note, "componentsNoteFuture");
   assert.equal(current.snapshot, "unknown");
   assert.equal(current.showVitals, true);
 }
@@ -85,20 +104,30 @@ for (const [name, generated] of [
     expires_at: "2026-10-25T12:10:00Z",
   });
   assert.equal(boundary.reason, "fresh");
-  const beyond = state({
-    generated_at: "2026-10-25T12:05:01Z",
-    expires_at: "2026-10-25T12:10:01Z",
-  });
-  assertUnconfirmed(beyond, "future");
+  const beyond = track(
+    state({
+      generated_at: "2026-10-25T12:05:01Z",
+      expires_at: "2026-10-25T12:10:01Z",
+    }),
+  );
+  assert.equal(beyond.reason, "future");
+  assert.equal(beyond.mode, "stale");
 }
 
 // An expired snapshot still has a readable timestamp, but not a current state.
 {
-  const current = state({
-    generated_at: "2026-10-25T11:40:00Z",
-    expires_at: "2026-10-25T11:50:00Z",
-  });
-  assertUnconfirmed(current, "expired");
+  const current = track(
+    state({
+      generated_at: "2026-10-25T11:40:00Z",
+      expires_at: "2026-10-25T11:50:00Z",
+    }),
+  );
+  assert.equal(current.mode, "stale");
+  assert.equal(current.reason, "expired");
+  assert.equal(current.summary, "unknownStaleSummary");
+  assert.equal(current.bannerTitle, "staleTitle");
+  assert.equal(current.bannerText, "staleAgedText");
+  assert.equal(current.note, "componentsNoteStale");
   assert.equal(current.snapshot, "generated");
   assert.equal(current.generated, Date.parse("2026-10-25T11:40:00Z"));
   assert.equal(current.showVitals, true);
@@ -107,51 +136,140 @@ for (const [name, generated] of [
 // A heartbeat older than the 15-minute budget is aged even if a malformed
 // document publishes a later expiry. The page must not trust that budget.
 {
-  const current = state({
-    generated_at: "2026-10-25T11:44:00Z",
-    expires_at: "2026-10-25T13:00:00Z",
-  });
-  assertUnconfirmed(current, "aged");
+  const current = track(
+    state({
+      generated_at: "2026-10-25T11:44:00Z",
+      expires_at: "2026-10-25T13:00:00Z",
+    }),
+  );
+  assert.equal(current.mode, "stale");
+  assert.equal(current.reason, "aged");
+  assert.equal(current.summary, "unknownStaleSummary");
+  assert.equal(current.bannerText, "staleAgedText");
   assert.equal(current.snapshot, "generated");
+}
+
+// A fresh heartbeat keeps a per-component unknown as a real unknown segment;
+// only an unconfirmed heartbeat forces every row to unknown.
+{
+  const mixed = track(
+    model.presentation(
+      {
+        ...operational,
+        overall: "degraded",
+        components: [
+          { status: "operational" },
+          { status: "degraded" },
+          { status: "unknown" },
+        ],
+      },
+      false,
+      now,
+    ),
+  );
+  assert.equal(mixed.mode, "fresh");
+  assert.equal(mixed.confirmed, true);
+  assert.equal(mixed.forceUnknown, false);
+  assert.equal(mixed.headline, "degraded");
+  assert.equal(mixed.signal, "count");
+  assert.equal(mixed.note, "componentsNoteFresh");
 }
 
 // A failed read owns the view even when a previous payload is retained:
 // no rows, no vitals, no counts, and no summary from the old document.
 {
-  const failed = model.presentation(operational, true, now);
+  const failed = track(model.presentation(operational, true, now));
   assert.equal(failed.mode, "error");
   assert.equal(failed.reason, "error");
   assert.equal(failed.headline, "unknown");
-  assert.equal(failed.summary, "notDisplayed");
+  assert.equal(failed.summary, "errorSummary");
+  assert.equal(failed.banner, "error");
+  assert.equal(failed.bannerTitle, "errorTitle");
+  assert.equal(failed.bannerText, "errorText");
+  assert.equal(failed.note, null);
   assert.equal(failed.confirmed, false);
   assert.equal(failed.forceUnknown, true);
   assert.equal(failed.showData, false);
   assert.equal(failed.showVitals, false);
   assert.equal(failed.showStaleBanner, false);
+  assert.equal(failed.showErrorBanner, true);
   assert.equal(failed.signal, "unknown");
   assert.equal(failed.snapshot, "unknown");
 }
 
 // The same failed read before any successful read has no data to leak.
 {
-  const failed = model.presentation(null, true, now);
+  const failed = track(model.presentation(null, true, now));
   assert.equal(failed.mode, "error");
   assert.equal(failed.headline, "unknown");
-  assert.equal(failed.summary, "notDisplayed");
+  assert.equal(failed.summary, "errorSummary");
+  assert.equal(failed.banner, "error");
   assert.equal(failed.showData, false);
   assert.equal(failed.showVitals, false);
+  assert.equal(failed.showStaleBanner, false);
   assert.equal(failed.signal, "unknown");
 }
 
+// The first load stays quiet until the bounded read window ends.
 {
-  const loading = model.presentation(null, false, now);
+  const loading = track(model.presentation(null, false, now));
   assert.equal(loading.mode, "loading");
   assert.equal(loading.reason, "loading");
   assert.equal(loading.headline, "unknown");
   assert.equal(loading.summary, "loadingSummary");
+  assert.equal(loading.banner, null);
+  assert.equal(loading.bannerTitle, null);
+  assert.equal(loading.bannerText, null);
+  assert.equal(loading.note, "componentsNoteLoading");
   assert.equal(loading.showData, false);
   assert.equal(loading.showVitals, false);
   assert.equal(loading.showStaleBanner, false);
+  assert.equal(loading.showErrorBanner, false);
+  assert.equal(loading.signal, "unknown");
+  assert.equal(loading.snapshot, "unknown");
+}
+
+// One presentation state at a time, and exactly one banner at most.
+for (const current of states) {
+  assert.ok(
+    ["loading", "fresh", "stale", "error"].includes(current.mode),
+    `unexpected mode ${current.mode}`,
+  );
+  assert.equal(
+    current.showStaleBanner && current.showErrorBanner,
+    false,
+    `${current.mode}/${current.reason}: both banners are visible`,
+  );
+  assert.equal(
+    current.banner === "stale",
+    current.showStaleBanner,
+    `${current.mode}/${current.reason}: stale banner decision disagrees`,
+  );
+  assert.equal(
+    current.banner === "error",
+    current.showErrorBanner,
+    `${current.mode}/${current.reason}: error banner decision disagrees`,
+  );
+  if (current.mode === "error") {
+    assert.equal(current.showData, false);
+    assert.equal(current.showVitals, false);
+    assert.equal(current.banner, "error");
+  }
+  if (current.mode === "loading") {
+    assert.equal(current.banner, null);
+    assert.equal(current.showData, false);
+  }
+  if (current.mode === "fresh") {
+    assert.equal(current.banner, null);
+    assert.equal(current.confirmed, true);
+  }
+  if (current.mode === "stale") {
+    assert.equal(current.banner, "stale");
+    assert.equal(current.confirmed, false);
+    assert.equal(current.forceUnknown, true);
+    assert.equal(current.headline, "unknown");
+    assert.notEqual(current.summary, "payload");
+  }
 }
 
 // Low-level freshness remains the single timestamp rule.
