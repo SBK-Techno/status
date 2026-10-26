@@ -139,7 +139,6 @@ main:focus-visible {
 
 .hero {
   display: flex;
-  min-height: calc(100dvh - var(--status-header-block));
   border-bottom: 1px solid var(--sbk-border);
 }
 
@@ -147,7 +146,7 @@ main:focus-visible {
   display: grid;
   flex: 1;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto auto;
   column-gap: var(--status-grid-gap);
   padding-block: clamp(var(--sbk-space-5), 4vh, var(--sbk-space-7)) var(--sbk-space-5);
 }
@@ -194,7 +193,7 @@ main:focus-visible {
   grid-row: 2;
   align-self: start;
   min-width: 0;
-  padding-block: var(--sbk-space-7) var(--sbk-space-5);
+  padding-block: var(--sbk-space-6) var(--sbk-space-5);
   animation: status-rise var(--sbk-duration-slow) var(--sbk-ease) both;
 }
 
@@ -224,11 +223,15 @@ main:focus-visible {
   overflow-wrap: break-word;
   color: var(--status);
   font-family: var(--sbk-font-display);
-  font-size: clamp(3rem, 8vw, 7rem);
+  font-size: clamp(2.75rem, 7vw, 6rem);
   font-weight: 700;
   letter-spacing: var(--sbk-tracking-display);
   line-height: var(--sbk-leading-display);
   text-wrap: balance;
+}
+
+.hero[data-mode="loading"] .hero-statement__value {
+  color: var(--sbk-text-muted);
 }
 
 .hero-summary {
@@ -258,10 +261,6 @@ main:focus-visible {
   height: 6px;
   flex: none;
   background: var(--sbk-signal);
-}
-
-.hero__about {
-  display: none;
 }
 
 /* Vitals: a decorative instrument whose values mirror the component board. */
@@ -365,6 +364,8 @@ main:focus-visible {
 
 .vitals__segment[data-vital="unknown"] {
   stroke: var(--sbk-unknown);
+  stroke-width: 6;
+  opacity: 0.55;
 }
 
 .vitals__legend li[data-vital="operational"] .vitals__key {
@@ -384,7 +385,8 @@ main:focus-visible {
 }
 
 .vitals__legend li[data-vital="unknown"] .vitals__key {
-  background: var(--sbk-unknown);
+  border: 1px dashed var(--sbk-unknown);
+  background: transparent;
 }
 
 .vitals__signal-track {
@@ -402,13 +404,19 @@ main:focus-visible {
 
 .vitals__readout {
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 50%;
   display: flex;
+  width: 56%;
+  aspect-ratio: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  border-radius: var(--sbk-radius-pill);
+  background: var(--sbk-canvas);
   pointer-events: none;
   text-align: center;
+  transform: translate(-50%, -50%);
 }
 
 .vitals__number {
@@ -424,6 +432,7 @@ main:focus-visible {
 .vitals__unit {
   margin-top: 4px;
   color: var(--sbk-text-muted);
+  background: var(--sbk-canvas);
   font-family: var(--sbk-font-mono);
   font-size: 0.6875rem;
   letter-spacing: var(--sbk-tracking-micro);
@@ -503,6 +512,7 @@ main:focus-visible {
   border-top: 1px solid var(--sbk-border);
 }
 
+.hero__signal,
 .hero__check,
 .hero__source {
   display: flex;
@@ -516,28 +526,11 @@ main:focus-visible {
   line-height: 1.4;
 }
 
-.hero__check time {
+#hero-signal,
+#hero-checked {
   color: var(--sbk-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.hero__next {
-  margin: 0;
-  font-family: var(--sbk-font-mono);
-  font-size: var(--sbk-size-micro);
-  line-height: 1.4;
-}
-
-.hero__next a {
-  color: var(--sbk-signal);
-  text-decoration: none;
-  border-bottom: 1px solid var(--sbk-signal);
-  padding-bottom: 1px;
-}
-
-.hero__next a:hover {
-  border-bottom-width: 2px;
 }
 
 .hero__source a {
@@ -565,30 +558,8 @@ main:focus-visible {
 @media (min-width: 56.01rem) {
   .hero__copy {
     display: flex;
-    align-self: stretch;
+    align-self: center;
     flex-direction: column;
-  }
-
-  .hero__about {
-    display: block;
-    max-width: 42ch;
-    margin: auto 0 0;
-    padding-top: var(--sbk-space-4);
-    border-top: 1px solid var(--sbk-border);
-  }
-
-  .hero__about .micro {
-    display: block;
-    margin-bottom: var(--sbk-space-2);
-    color: var(--sbk-text-faint);
-  }
-
-  .hero__about-text {
-    margin: 0;
-    color: var(--sbk-text-muted);
-    font-size: 0.9375rem;
-    line-height: 1.6;
-    text-wrap: pretty;
   }
 
   .vitals {
@@ -649,6 +620,15 @@ main:focus-visible {
   --status: var(--sbk-warning);
   border-color: var(--sbk-warning);
   background: var(--sbk-warning-soft);
+}
+
+/* A missing heartbeat is not a warning about a known fault. It is a calm,
+   unconfirmed state, so it keeps the unknown palette instead of the warning
+   palette used by an aged or inconsistent signal. */
+.alert-stale[data-reason="never"] {
+  --status: var(--sbk-unknown);
+  border-color: var(--sbk-border-strong);
+  background: var(--sbk-unknown-soft);
 }
 
 .alert-noscript {
@@ -761,6 +741,15 @@ main:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+.board-note {
+  margin: 0;
+  padding-block: var(--sbk-space-3);
+  border-bottom: 1px solid var(--sbk-border);
+  color: var(--sbk-text-muted);
+  font-size: var(--sbk-size-small);
+  line-height: var(--sbk-leading-body);
+}
+
 .components {
   margin: 0;
   padding: 0;
@@ -769,20 +758,15 @@ main:focus-visible {
 
 .component {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  align-items: start;
-  column-gap: var(--status-grid-gap);
-  padding-block: var(--sbk-space-5);
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sbk-space-3);
+  padding-block: var(--sbk-space-3);
   border-bottom: 1px solid var(--sbk-border);
-}
-
-.component:first-child {
-  border-top: 1px solid var(--sbk-border);
 }
 
 .component-index {
   grid-column: 1;
-  padding-top: 0.35rem;
   color: var(--status);
   font-family: var(--sbk-font-mono);
   font-size: 0.6875rem;
@@ -792,58 +776,23 @@ main:focus-visible {
 }
 
 .component-name {
-  grid-column: 2 / span 4;
+  grid-column: 2;
   margin: 0;
   color: var(--sbk-text);
   font-family: var(--sbk-font-ui);
-  font-size: clamp(1.125rem, 1.5vw, 1.375rem);
-  font-weight: 700;
+  font-size: 1.0625rem;
+  font-weight: 600;
   letter-spacing: var(--sbk-tracking-heading);
-  line-height: 1.2;
+  line-height: 1.3;
   overflow-wrap: anywhere;
-}
-
-.component-detail {
-  grid-column: 6 / span 4;
-  max-width: var(--sbk-measure);
-  margin: 0;
-  color: var(--sbk-text-muted);
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
 }
 
 .component-side {
   display: flex;
-  grid-column: 10 / span 3;
+  grid-column: 3;
   min-width: 0;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--sbk-space-2);
-}
-
-.component-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  margin: 0;
-  color: var(--sbk-text-muted);
-  font-family: var(--sbk-font-mono);
-  font-size: 0.6875rem;
-  line-height: 1.4;
-  text-align: right;
-}
-
-.component-meta .micro {
-  color: var(--sbk-text-faint);
-}
-
-.component-meta time {
-  color: var(--sbk-text);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .pill {
@@ -1311,38 +1260,9 @@ main:focus-visible {
   .vitals {
     grid-column: 8 / span 5;
   }
-
-  .component {
-    grid-template-columns: 2.5rem minmax(0, 1fr) minmax(10rem, 0.55fr);
-    row-gap: var(--sbk-space-2);
-  }
-
-  .component-index {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .component-name {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .component-detail {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .component-side {
-    grid-column: 3;
-    grid-row: 1 / span 2;
-  }
 }
 
 @media (max-width: 56rem) {
-  .hero {
-    min-height: calc(100dvh - var(--status-header-block));
-  }
-
   .hero__inner {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto auto auto;
@@ -1493,49 +1413,18 @@ main:focus-visible {
     font-size: 0.625rem;
   }
 
-  .hero {
-    min-height: calc(100dvh - var(--status-header-block));
-  }
-
   .hero__copy {
     padding-block: var(--sbk-space-5);
   }
 
   .component {
-    grid-template-columns: 2rem minmax(0, 1fr);
-    row-gap: var(--sbk-space-3);
-  }
-
-  .component-index {
-    grid-column: 1;
-    grid-row: 1;
+    grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+    column-gap: var(--sbk-space-2);
+    padding-block: var(--sbk-space-3);
   }
 
   .component-name {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .component-detail {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .component-side {
-    grid-column: 2;
-    grid-row: 3;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--sbk-space-2) var(--sbk-space-4);
-  }
-
-  .component-meta {
-    flex-direction: row;
-    align-items: baseline;
-    gap: 6px;
-    text-align: left;
+    font-size: 1rem;
   }
 
   .status-footer__inner {
@@ -1610,18 +1499,6 @@ main:focus-visible {
 
   .section-title {
     font-size: 1.75rem;
-  }
-
-  .component {
-    grid-template-columns: 1.5rem minmax(0, 1fr);
-  }
-
-  .component-name {
-    font-size: 1.125rem;
-  }
-
-  .component-side {
-    align-items: flex-start;
   }
 
   .error-code {

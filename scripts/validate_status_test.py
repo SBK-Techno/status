@@ -40,22 +40,33 @@ def valid_page() -> str:
 <a class="sbk-brand" href="/"><img src="/logo.svg" alt="SBK Techno" width="96" height="40"></a>
 </header>
 <main id="contenu" tabindex="-1">
+<div id="fetch-error" role="alert" hidden>
+<p>Impossible de lire l'état du service.</p>
+<button id="retry-button" type="button">Réessayer</button>
+</div>
+<div id="stale-banner" role="status" hidden><p>Signal périmé.</p></div>
 <section id="hero" data-status="unknown">
 <h1>État du service</h1>
 <p id="hero-status-text">État inconnu</p>
 <p id="overall-summary">Aucun signal de vie reçu.</p>
+<p><span id="hero-signal">Aucun</span> <span id="hero-checked">Inconnu</span></p>
 <div id="vitals" aria-hidden="true" data-total="1">
-<svg role="presentation" focusable="false"></svg>
+<svg role="presentation" focusable="false">
+<circle class="vitals__segment" data-vital="operational"></circle>
+<circle class="vitals__segment" data-vital="degraded"></circle>
+<circle class="vitals__segment" data-vital="outage"></circle>
+<circle class="vitals__segment" data-vital="maintenance"></circle>
+<circle class="vitals__segment" data-vital="unknown"></circle>
+</svg>
 </div>
 </section>
 <h2>Composantes</h2>
 <p><span id="components-count">01</span> suivies</p>
+<p id="components-note" hidden>Aucun signal reçu.</p>
 <ul id="components-list">
 <li class="component">
 <h3>Portail</h3>
-<p class="component-detail">Aucun signal de vie reçu pour le portail.</p>
 <span class="pill" data-status="unknown">Inconnu</span>
-<p class="component-meta"><time datetime="2026-10-25T13:42:57Z">25 octobre 2026 à 13 h 42 UTC</time></p>
 </li>
 </ul>
 <p id="components-empty" hidden>Aucune composante déclarée.</p>
@@ -180,7 +191,7 @@ class ValidateStatusTest(unittest.TestCase):
         skewed["expires_at"] = "2026-10-25T12:09:00Z"
         self.assertEqual(VALIDATOR.validate_document(skewed, now=fixed), [])
 
-    def test_render_state_contract_covers_null_and_failed_fetch(self) -> None:
+    def test_render_state_contract_covers_loading_fresh_stale_and_error(self) -> None:
         node = subprocess.run(
             ["node", str(Path(__file__).with_name("status_model_test.mjs"))],
             check=False,
@@ -194,6 +205,57 @@ class ValidateStatusTest(unittest.TestCase):
             f"status model contract failed:\n{node.stdout}\n{node.stderr}",
         )
         self.assertIn("status model ok", node.stdout)
+
+    def test_accepts_aged_and_expired_documents_for_the_unknown_view(self) -> None:
+        fixed = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+        cases = {
+            "aged": ("2026-10-25T11:40:00Z", "2026-10-25T11:50:00Z"),
+            "expired": ("2026-10-25T11:30:00Z", "2026-10-25T11:35:00Z"),
+        }
+        for name, (generated, expires) in cases.items():
+            with self.subTest(state=name):
+                document = valid_document()
+                document["generated_at"] = generated
+                document["expires_at"] = expires
+                self.assertEqual(
+                    VALIDATOR.validate_document(document, now=fixed),
+                    [],
+                    f"{name}: a stale document is valid, the page renders it as unknown",
+                )
+
+    def test_compact_rows_and_single_banner_are_structural_invariants(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        app = (root / "app.js").read_text(encoding="utf-8")
+        css = (root / "styles.css").read_text(encoding="utf-8")
+        template = (root / "templates/index.html").read_text(encoding="utf-8")
+
+        # The repeated per-row sentence must not come back. A compact row is
+        # exactly an index, a name, and a status badge.
+        self.assertNotIn("componentDetailUnconfirmed", app)
+        self.assertNotIn("component-detail", app)
+        self.assertNotIn("component-meta", app)
+        start = app.index("function renderComponents")
+        end = app.index("function addIncidentTime")
+        render_block = app[start:end]
+        self.assertNotIn('createElement("p")', render_block)
+        self.assertIn("item.append(index, name, side)", render_block)
+        self.assertIn(".component {", css)
+        self.assertIn("grid-template-columns: 2.5rem minmax(0, 1fr) auto;", css)
+        self.assertIn("grid-template-columns: 1.5rem minmax(0, 1fr) auto;", css)
+        self.assertIn('<p class="board-note" id="components-note"', template)
+
+        # The vitals centre is a plain count, and an unknown segment is dashed
+        # rather than a solid healthy-looking arc.
+        self.assertIn("setText(els.vitalsTotal, String(total));", app)
+        self.assertIn("setText(els.vitalsNumber, String(total));", app)
+        self.assertNotIn("pad2(total)", app)
+        self.assertIn("function dashedArc(length)", app)
+        self.assertIn('data-vital="unknown"', template)
+        self.assertIn(".vitals__segment[data-vital=\"unknown\"]", css)
+
+        # One model owns both banner decisions.
+        self.assertIn("current.banner === \"error\"", app)
+        self.assertIn("current.banner !== \"stale\"", app)
 
     def test_accepts_valid_page(self) -> None:
         self.assertEqual(
@@ -285,9 +347,7 @@ class ValidateStatusTest(unittest.TestCase):
                 "not a valid ISO 8601",
             ),
             "time without text": (
-                lambda p: p.replace(
-                    ">25 octobre 2026 à 13 h 42 UTC</time>", "></time>", 1
-                ),
+                lambda p: p.replace(">25 octobre 2026</time>", "></time>", 1),
                 "human-readable text",
             ),
             "external script": (
@@ -336,25 +396,25 @@ class ValidateStatusTest(unittest.TestCase):
                 ),
                 "javascript: URL",
             ),
-            "component without snapshot note": (
+            "component repeated detail": (
                 lambda p: p.replace(
-                    '<p class="component-meta"><time datetime="2026-10-25T13:42:57Z">25 octobre 2026 à 13 h 42 UTC</time></p>',
-                    "",
+                    '<li class="component">\n<h3>Portail</h3>\n<span class="pill" data-status="unknown">Inconnu</span>\n</li>',
+                    '<li class="component">\n<h3>Portail</h3>\n<p class="component-detail">Le dernier signal ne confirme pas cet état.</p>\n<span class="pill" data-status="unknown">Inconnu</span>\n</li>',
                     1,
                 ),
-                "component row 1 needs a snapshot note",
+                "must stay compact",
             ),
             "component without name": (
                 lambda p: p.replace("<h3>Portail</h3>", "", 1),
                 "component name",
             ),
-            "component without detail": (
+            "component without shared note": (
                 lambda p: p.replace(
-                    '<p class="component-detail">Aucun signal de vie reçu pour le portail.</p>',
+                    '<p id="components-note" hidden>Aucun signal reçu.</p>',
                     "",
                     1,
                 ),
-                "component detail",
+                "#components-note",
             ),
             "component without label": (
                 lambda p: p.replace(
@@ -506,6 +566,46 @@ class ValidateStatusTest(unittest.TestCase):
                     '<span id="components-count"></span>',
                 ),
                 "#components-count",
+            ),
+            "two banners visible": (
+                lambda p: p.replace(
+                    '<div id="fetch-error" role="alert" hidden>',
+                    '<div id="fetch-error" role="alert">',
+                ).replace(
+                    '<div id="stale-banner" role="status" hidden>',
+                    '<div id="stale-banner" role="status">',
+                ),
+                "never be visible together",
+            ),
+            "duplicate stale banner": (
+                lambda p: p.replace(
+                    '<div id="stale-banner" role="status" hidden><p>Signal périmé.</p></div>',
+                    '<div id="stale-banner" role="status" hidden><p>Signal périmé.</p></div>'
+                    '<div id="stale-banner" role="status" hidden><p>Signal périmé.</p></div>',
+                ),
+                "#stale-banner must appear exactly once",
+            ),
+            "duplicate row note": (
+                lambda p: p.replace(
+                    '<p id="components-note" hidden>Aucun signal reçu.</p>',
+                    '<p id="components-note" hidden>Aucun signal reçu.</p>'
+                    '<p id="components-note" hidden>Aucun signal reçu.</p>',
+                ),
+                "#components-note must appear exactly once",
+            ),
+            "missing retry": (
+                lambda p: p.replace(
+                    '<button id="retry-button" type="button">Réessayer</button>',
+                    "",
+                ),
+                "one retry button",
+            ),
+            "missing unknown segment": (
+                lambda p: p.replace(
+                    '<circle class="vitals__segment" data-vital="unknown"></circle>',
+                    "",
+                ),
+                "five status segments",
             ),
         }
         for name, (mutate, expected) in cases.items():
@@ -772,6 +872,26 @@ class ValidateStatusTest(unittest.TestCase):
         self.assertIn(
             "the no-JS component list must be empty",
             " | ".join(VALIDATOR.validate_no_js_snapshot("index.html", row)),
+        )
+
+        note = text.replace(
+            '<p class="board-note" id="components-note" data-i18n="componentsNoteLoading" hidden>',
+            '<p class="board-note" id="components-note" data-i18n="componentsNoteLoading">',
+            1,
+        )
+        self.assertIn(
+            "#components-note must stay hidden",
+            " | ".join(VALIDATOR.validate_no_js_snapshot("index.html", note)),
+        )
+
+        banner = text.replace(
+            'id="fetch-error" role="alert" aria-labelledby="fetch-error-title" hidden',
+            'id="fetch-error" role="alert" aria-labelledby="fetch-error-title"',
+            1,
+        )
+        self.assertIn(
+            "#fetch-error must stay hidden",
+            " | ".join(VALIDATOR.validate_no_js_snapshot("index.html", banner)),
         )
 
     def test_header_lockup_contrast_uses_the_rendered_asset_and_surface(self) -> None:
