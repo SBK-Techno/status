@@ -706,7 +706,11 @@ class ValidateStatusTest(unittest.TestCase):
             asset["file"] for asset in manifest["assets"] if asset.get("publish")
         }
         current = {path.name for path in ROOT.glob("brand.*.css")}
-        self.assertEqual(current, {asset for asset in published if asset.endswith(".css")})
+        published_css = {asset for asset in published if asset.endswith(".css")}
+        # Every published sheet must exist. A retired sheet may remain on disk
+        # for the declared retention window, and retention_errors owns that rule,
+        # so do not hardcode the current hash or require immediate deletion.
+        self.assertLessEqual(published_css, current)
         self.assertEqual(prune_assets.retention_errors(ROOT), [])
 
     def test_unmanifested_brand_sheet_fails_retention(self) -> None:
