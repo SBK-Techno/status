@@ -825,7 +825,11 @@
   function init() {
     if (!els.hero) return;
     bind();
-    renderAll();
+    // The HTML already carries the publish-time snapshot. Keep it on screen
+    // until the first read succeeds or fails, instead of replacing real rows
+    // with a loading board. applyStaticTranslations only rewrites the static
+    // labels, so ?lang=en is honoured without erasing that snapshot.
+    applyStaticTranslations();
     if (!document.hidden) startPolling();
     refresh();
   }

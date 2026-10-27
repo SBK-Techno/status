@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "fresh operational",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": "2026-10-25T11:59:00Z",
+        "expires_at": "2026-10-25T12:04:00Z",
+        "overall": "operational",
+        "summary_fr": "Tous les services surveillés répondent.",
+        "summary_en": "All monitored services respond.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "operational", "detail_fr": "Disponible.", "detail_en": "Available." },
+          { "id": "docs", "label_fr": "Documentation", "label_en": "Documentation", "status": "degraded", "detail_fr": "Lente.", "detail_en": "Slow." }
+        ],
+        "incidents": []
+      }
+    },
+    {
+      "name": "fresh mixed with incident",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": "2026-10-25T11:59:30Z",
+        "expires_at": "2026-10-25T12:14:30Z",
+        "overall": "degraded",
+        "summary_fr": "Certains services sont dégradés.",
+        "summary_en": "Some services are degraded.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "degraded", "detail_fr": "Lent.", "detail_en": "Slow." },
+          { "id": "llm", "label_fr": "Passerelle IA", "label_en": "AI gateway", "status": "unknown", "detail_fr": "Inconnu.", "detail_en": "Unknown." }
+        ],
+        "incidents": [
+          {
+            "id": "inc_1",
+            "status": "monitoring",
+            "title_fr": "Latence élevée",
+            "title_en": "Elevated latency",
+            "started_at": "2026-10-25T11:30:00Z",
+            "updated_at": "2026-10-25T11:50:00Z",
+            "summary_fr": "Nous surveillons.",
+            "summary_en": "We are monitoring."
+          }
+        ]
+      }
+    },
+    {
+      "name": "null heartbeat",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": null,
+        "expires_at": null,
+        "overall": "unknown",
+        "summary_fr": "Aucun signal de vie reçu.",
+        "summary_en": "No heartbeat received.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "unknown", "detail_fr": "Aucun signal.", "detail_en": "No signal." }
+        ],
+        "incidents": []
+      }
+    },
+    {
+      "name": "empty heartbeat",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": "",
+        "expires_at": "",
+        "overall": "unknown",
+        "summary_fr": "Aucun signal de vie reçu.",
+        "summary_en": "No heartbeat received.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "unknown", "detail_fr": "Aucun signal.", "detail_en": "No signal." }
+        ],
+        "incidents": []
+      }
+    },
+    {
+      "name": "future heartbeat",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": "2026-10-25T13:00:00Z",
+        "expires_at": "2026-10-25T13:05:00Z",
+        "overall": "operational",
+        "summary_fr": "Tout va bien.",
+        "summary_en": "All good.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "operational", "detail_fr": "Disponible.", "detail_en": "Available." }
+        ],
+        "incidents": []
+      }
+    },
+    {
+      "name": "expired heartbeat",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": "2026-10-25T11:30:00Z",
+        "expires_at": "2026-10-25T11:45:00Z",
+        "overall": "operational",
+        "summary_fr": "Tout va bien.",
+        "summary_en": "All good.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "operational", "detail_fr": "Disponible.", "detail_en": "Available." }
+        ],
+        "incidents": []
+      }
+    },
+    {
+      "name": "aged heartbeat",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": "2026-10-25T11:40:00Z",
+        "expires_at": "2026-10-25T13:00:00Z",
+        "overall": "operational",
+        "summary_fr": "Tout va bien.",
+        "summary_en": "All good.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "operational", "detail_fr": "Disponible.", "detail_en": "Available." }
+        ],
+        "incidents": []
+      }
+    },
+    {
+      "name": "exactly five minutes ahead",
+      "now": "2026-10-25T12:00:00Z",
+      "document": {
+        "version": 1,
+        "generated_at": "2026-10-25T12:05:00Z",
+        "expires_at": "2026-10-25T12:10:00Z",
+        "overall": "operational",
+        "summary_fr": "Tout va bien.",
+        "summary_en": "All good.",
+        "components": [
+          { "id": "portal", "label_fr": "Portail", "label_en": "Portal", "status": "operational", "detail_fr": "Disponible.", "detail_en": "Available." }
+        ],
+        "incidents": []
+      }
+    }
+  ]
+}

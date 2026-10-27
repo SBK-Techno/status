@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/build_site.py",
+  "assets": [
+    {
+      "name": "styles.css",
+      "source": "styles.css",
+      "file": "assets/styles.5227331ecc90.css",
+      "mediaType": "text/css; charset=utf-8",
+      "sha256": "5227331ecc90290cabbe54aa3f9f3f29da0e36da2ad61f00974908a08a98dbdb",
+      "bytes": 33564
+    },
+    {
+      "name": "app.js",
+      "source": "app.js",
+      "file": "assets/app.c8bcc4efafa5.js",
+      "mediaType": "text/javascript; charset=utf-8",
+      "sha256": "c8bcc4efafa556772179e9bccc1f6e1ee941de44e4a89fe908643e3bc01c73dc",
+      "bytes": 29436
+    },
+    {
+      "name": "status-model.js",
+      "source": "status-model.js",
+      "file": "assets/status-model.8a886c35f08a.js",
+      "mediaType": "text/javascript; charset=utf-8",
+      "sha256": "8a886c35f08ab512d739f22d623c5698e1f94cca8981e28ec7fdcf64ec4c4af0",
+      "bytes": 6658
+    },
+    {
+      "name": "print.css",
+      "source": null,
+      "file": "assets/print.e8eebda08685.css",
+      "mediaType": "text/css; charset=utf-8",
+      "sha256": "e8eebda08685f4b26699154cd98c542293f8bad757791a9810d43d533b3ba775",
+      "bytes": 1549
+    }
+  ]
+}

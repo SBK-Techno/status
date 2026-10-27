@@ -86,6 +86,14 @@ main:focus-visible {
   flex: none;
 }
 
+/* Print cannot use the reverse lockup on a light sheet. The print block swaps
+   it for the published one-colour icon and a text wordmark, both hidden on
+   screen. No recolour, filter, or substitute asset is involved. */
+.status-brand .status-brand__print-mark,
+.status-brand__print-wordmark {
+  display: none;
+}
+
 .status-brand__divider {
   width: 1px;
   height: var(--sbk-space-6);
@@ -514,6 +522,7 @@ main:focus-visible {
 
 .hero__signal,
 .hero__check,
+.hero__snapshot,
 .hero__source {
   display: flex;
   flex-wrap: wrap;
@@ -527,10 +536,21 @@ main:focus-visible {
 }
 
 #hero-signal,
-#hero-checked {
+#hero-checked,
+#snapshot-marker {
   color: var(--sbk-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* The static snapshot marker is a no-JavaScript affordance. Once app.js runs,
+   the live read time in the footer owns that fact. */
+.hero__snapshot {
+  display: none;
+}
+
+.no-js .hero__snapshot {
+  display: flex;
 }
 
 .hero__source a {
@@ -1503,6 +1523,103 @@ main:focus-visible {
 
   .error-code {
     font-size: clamp(7rem, 34vw, 10rem);
+  }
+}
+
+/*
+ * Print is a light surface. The generated print palette rebinds the brand
+ * light tokens for print; this block only changes geometry and which marks
+ * are shown. Nothing here relies on a print background adjustment: text is
+ * dark even when a browser drops every background, so the page remains
+ * legible white on white paper and the one-colour mark stays blue on white.
+ */
+@media print {
+  @page {
+    margin: 18mm;
+  }
+
+  html,
+  body {
+    background: var(--sbk-canvas);
+    color: var(--sbk-text);
+  }
+
+  .status-header {
+    position: static;
+    background: var(--sbk-canvas);
+    border-bottom: 1px solid var(--sbk-border);
+  }
+
+  .status-header__meta,
+  .status-header__signal,
+  .status-brand__divider,
+  .status-footer .lang,
+  .vitals,
+  .status-alerts .btn {
+    display: none;
+  }
+
+  .status-brand .status-brand__mark {
+    display: none;
+  }
+
+  .status-brand .status-brand__print-mark {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+  }
+
+  .status-brand__print-wordmark {
+    display: inline;
+    color: var(--sbk-text);
+    font-family: var(--sbk-font-ui);
+    font-size: var(--sbk-size-body);
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .status-footer__mark {
+    background: var(--sbk-surface);
+  }
+
+  .hero__snapshot {
+    display: flex;
+  }
+
+  .component,
+  .incident {
+    break-inside: avoid;
+  }
+
+  a {
+    color: var(--sbk-signal);
+    text-decoration: underline;
+  }
+}
+
+/*
+ * Forced-colours light mode drops the dark canvas while leaving the published
+ * reverse lockup's white wordmark white. Swap to the one-colour icon plus a
+ * text wordmark, exactly as print does, so the identity survives the user's
+ * palette override.
+ */
+@media (forced-colors: active) {
+  .status-brand .status-brand__mark {
+    display: none;
+  }
+
+  .status-brand .status-brand__print-mark {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+  }
+
+  .status-brand__print-wordmark {
+    display: inline;
+    color: CanvasText;
+    font-family: var(--sbk-font-ui);
+    font-size: var(--sbk-size-body);
+    font-weight: 700;
   }
 }
 

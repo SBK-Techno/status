@@ -13,72 +13,41 @@ jobs:
   validate:
     name: Validate the static status site
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Verify the generated brand assets
-        run: |
-          python3 - <<'PY'
-          import hashlib
-          import re
-          import json
-          import sys
-          from pathlib import Path
+      # The brand generator and linter are the platform's source of truth for
+      # the shared shell. They are read-only inputs, not a second copy of the
+      # brand contract in this repository.
+      - name: Check out the platform toolchain
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: SBK-Techno/platform
+          path: .toolchain/platform
+          persist-credentials: false
 
-          manifest = json.loads(Path("brand.manifest.json").read_text(encoding="utf-8"))
-          if manifest.get("version") != 1 or not manifest.get("generatedBy"):
-              sys.exit("brand.manifest.json must declare version 1 and generatedBy")
-          assets = manifest.get("assets")
-          if not isinstance(assets, list) or not assets:
-              sys.exit("brand.manifest.json must declare assets")
+      - name: Check out the brand layer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: SBK-Techno/brand
+          path: .toolchain/brand
+          persist-credentials: false
 
-          pages = {name: Path(name).read_text(encoding="utf-8") for name in ("index.html", "404.html")}
-          for name, text in pages.items():
-              if "{{asset:" in text:
-                  sys.exit(f"{name}: unresolved brand placeholder")
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .toolchain/platform/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: .toolchain/platform/go.sum
 
-          # An asset is referenced either from a page or from a stylesheet the
-          # page links. A font is never in the HTML: it is named by an
-          # @font-face rule, so requiring an HTML reference would reject a
-          # correctly published font.
-          root = Path(".")
-          stylesheets = {}
-          for page, text in pages.items():
-              for match in re.findall(r'<link[^>]+href="([^"]+\.css)"', text):
-                  # A page links a published stylesheet as a site-absolute URL
-                  # such as /brand.feb52ba6b3fe.css, so the leading slash is
-                  # stripped before resolving it inside the checkout.
-                  candidate = root / match.lstrip("/")
-                  if not candidate.is_file():
-                      # Dropping a link that does not resolve would silently
-                      # fall back to the page-only check and reject every font
-                      # the stylesheet names, so it is reported instead.
-                      sys.exit(f"{page}: linked stylesheet {match} is missing")
-                  stylesheets[match] = candidate.read_text(encoding="utf-8")
+      - name: Validate the document, snapshot, brand link, and print block
+        run: make validate PLATFORM=.toolchain/platform BRAND=.toolchain/brand
 
-          for asset in assets:
-              if not asset.get("publish"):
-                  continue
-              path = Path(asset["file"])
-              if not path.is_file():
-                  sys.exit(f"{path}: missing")
-              data = path.read_bytes()
-              if hashlib.sha256(data).hexdigest() != asset["sha256"]:
-                  sys.exit(f"{path}: digest mismatch")
-              if len(data) != asset["bytes"]:
-                  sys.exit(f"{path}: size mismatch")
-              if not any(asset["file"] in text for text in list(pages.values()) + list(stylesheets.values())):
-                  sys.exit(f"{asset['file']}: published but not referenced by any page or stylesheet")
-
-          print(f"brand manifest ok: {len(assets)} assets")
-          PY
-
-      - name: Validate status data and static assets
-        run: python3 scripts/validate_status.py
-
-      - name: Test the status validator
-        run: python3 -m unittest discover -s scripts -p '*_test.py'
+      - name: Lint the brand surface
+        working-directory: .toolchain/platform
+        run: go run ./cmd/brandlint -root . -brand ../brand -status ../..

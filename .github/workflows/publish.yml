@@ -71,6 +71,9 @@ jobs:
           Path("status.json").write_bytes(payload)
           PY
 
+      - name: Render the publish-time snapshot
+        run: python3 scripts/build_site.py --root . --write
+
       - name: Validate the written site
         run: python3 scripts/validate_status.py
 
@@ -78,7 +81,7 @@ jobs:
         run: |
           git config user.name "SBK status publisher"
           git config user.email "status@sbktechno.com"
-          git add status.json
+          git add status.json index.html site.manifest.json assets asset-retention.json
           if git diff --cached --quiet; then
             echo "status unchanged"
             exit 0

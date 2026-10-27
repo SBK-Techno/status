@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="{{csp}}">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
   <meta name="color-scheme" content="dark">
@@ -13,7 +13,8 @@
   <link rel="icon" href="{{asset:favicon.ico}}" sizes="any">
   <link rel="icon" type="image/svg+xml" href="{{asset:icon-color.svg}}">
   <link rel="stylesheet" href="{{asset:brand.css}}">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="{{site:styles.css}}">
+  <link rel="stylesheet" href="{{site:print.css}}" media="print">
 </head>
 <body class="sbk-surface status-page" data-surface="provider">
   <a class="sbk-skip" href="#contenu">Aller au contenu</a>
@@ -22,6 +23,8 @@
     <div class="sbk-shell status-header__inner">
       <a class="sbk-brand status-brand" href="/" aria-label="SBK Techno, état du service">
         <img class="status-brand__mark" src="{{asset:logo-reverse.svg}}" alt="SBK Techno" width="284" height="118">
+        <img class="status-brand__print-mark" src="{{asset:icon-color.svg}}" alt="" width="28" height="28" aria-hidden="true">
+        <span class="status-brand__print-wordmark" aria-hidden="true">SBK Techno</span>
         <span class="status-brand__divider" aria-hidden="true"></span>
         <span class="status-brand__label">
           <span class="status-brand__product">État du service</span>

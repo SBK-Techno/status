@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="{{csp}}">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#080A0F">
@@ -12,17 +12,20 @@
   <link rel="icon" href="{{asset:favicon.ico}}" sizes="any">
   <link rel="icon" type="image/svg+xml" href="{{asset:icon-color.svg}}">
   <link rel="stylesheet" href="{{asset:brand.css}}">
-  <link rel="stylesheet" href="styles.css">
-  <script src="status-model.js" defer></script>
-  <script src="app.js" defer></script>
+  <link rel="stylesheet" href="{{site:styles.css}}">
+  <link rel="stylesheet" href="{{site:print.css}}" media="print">
+  <script src="{{site:status-model.js}}" defer></script>
+  <script src="{{site:app.js}}" defer></script>
 </head>
-<body class="sbk-surface status-page" data-surface="provider">
+<body class="sbk-surface status-page" data-surface="provider" data-snapshot-at="{{snapshot:at}}" data-status-digest="{{snapshot:digest}}">
   <a class="sbk-skip" href="#contenu" data-i18n="skipLink">Aller au contenu</a>
 
   <header class="sbk-header status-header">
     <div class="sbk-shell status-header__inner">
       <a class="sbk-brand status-brand" href="./" aria-label="SBK Techno, état du service" data-i18n-aria-label="brandHome">
         <img class="status-brand__mark" src="{{asset:logo-reverse.svg}}" alt="SBK Techno" width="284" height="118">
+        <img class="status-brand__print-mark" src="{{asset:icon-color.svg}}" alt="" width="28" height="28" aria-hidden="true">
+        <span class="status-brand__print-wordmark" aria-hidden="true">SBK Techno</span>
         <span class="status-brand__divider" aria-hidden="true"></span>
         <span class="status-brand__label">
           <span class="status-brand__product" data-i18n="pageTitle">État du service</span>
@@ -39,12 +42,13 @@
     <noscript>
       <div class="sbk-shell">
         <p class="alert alert-noscript">
-          Cette page ne lit pas <code>status.json</code> sans JavaScript.
-          Ouvrez <a href="status.json">status.json</a> pour l'état publié.
+          Instantané statique rendu à la publication. Le document source reste
+          <a href="status.json">status.json</a>.
         </p>
       </div>
     </noscript>
 
+    <!-- snapshot:start -->
     <div class="sbk-shell status-alerts">
       <div class="alert alert-error" id="fetch-error" role="alert" aria-labelledby="fetch-error-title" hidden>
         <div class="alert-copy">
@@ -56,8 +60,8 @@
 
       <div class="alert alert-stale" id="stale-banner" role="status" aria-labelledby="stale-title" hidden>
         <div class="alert-copy">
-          <p class="alert-title" id="stale-title" data-i18n="staleTitle">Signal périmé</p>
-          <p class="alert-text" id="stale-text">Aucun signal de vie n'a encore été reçu. L'état général et les composantes sont présentés comme inconnus.</p>
+          <p class="alert-title" id="stale-title">Aucun signal reçu</p>
+          <p class="alert-text" id="stale-text">L'état général et les composantes restent inconnus.</p>
         </div>
       </div>
     </div>
@@ -72,9 +76,9 @@
         <div class="hero__copy">
           <h1 class="hero-statement" id="hero-title">
             <span class="hero-statement__lead" data-i18n="overallLead">L'état du service est</span>
-            <span class="hero-statement__value"><span id="hero-status-text">non affiché</span><span class="hero-statement__period" aria-hidden="true">.</span></span>
+            <span class="hero-statement__value"><span id="hero-status-text">inconnu</span><span class="hero-statement__period" aria-hidden="true">.</span></span>
           </h1>
-          <p class="hero-summary" id="overall-summary" aria-live="polite" aria-atomic="true">L'état publié n'est pas affiché. Consultez status.json pour l'état courant.</p>
+          <p class="hero-summary" id="overall-summary" aria-live="polite" aria-atomic="true">Aucun signal reçu : le service n'est pas confirmé en panne.</p>
           <p class="hero__note">
             <span class="hero__note-mark" aria-hidden="true"></span>
             <span data-i18n="pageMetaStatic">Page statique indépendante</span>
@@ -86,7 +90,6 @@
             <p class="vitals__title">Vitals <span aria-hidden="true">/</span> <span data-i18n="componentsTitle">Composantes</span></p>
             <p class="vitals__total"><span id="vitals-total">0</span></p>
           </div>
-
           <div class="vitals__dial">
             <svg class="vitals__svg" viewBox="0 0 220 220" role="presentation" focusable="false">
               <circle class="vitals__ticks" cx="110" cy="110" r="100" pathLength="100" stroke-dasharray="0.25 1.75"></circle>
@@ -105,7 +108,6 @@
               <span class="vitals__unit" data-i18n="vitalsComponents">composantes</span>
             </div>
           </div>
-
           <ul class="vitals__legend">
             <li data-vital="operational"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalOperational">Opérationnelles</span><span class="vitals__count" data-count="operational">0</span></li>
             <li data-vital="degraded"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalDegraded">Dégradées</span><span class="vitals__count" data-count="degraded">0</span></li>
@@ -113,7 +115,6 @@
             <li data-vital="maintenance"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalMaintenance">Maintenance</span><span class="vitals__count" data-count="maintenance">0</span></li>
             <li data-vital="unknown"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalUnknown">Inconnues</span><span class="vitals__count" data-count="unknown">0</span></li>
           </ul>
-
           <p class="vitals__signal-line">
             <span data-i18n="vitalSignals">Signaux reçus</span>
             <span class="vitals__signal-value"><span id="vitals-signals">0</span>/<span id="vitals-signal-total">0</span></span>
@@ -123,11 +124,15 @@
         <div class="hero__foot">
           <p class="hero__signal">
             <span class="micro" data-i18n="heroSignal">Dernier signal :</span>
-            <span id="hero-signal">Non affiché</span>
+            <span id="hero-signal">Aucun</span>
           </p>
           <p class="hero__check">
             <span class="micro" data-i18n="heroChecked">Dernière lecture :</span>
             <span id="hero-checked">Inconnu</span>
+          </p>
+          <p class="hero__snapshot">
+            <span class="micro">Instantané</span>
+            <span id="snapshot-marker" data-snapshot-state="never"><span class="hero__snapshot-note">Aucun signal reçu.</span></span>
           </p>
           <p class="hero__source">
             <span class="micro" data-i18n="sourceLabel">Source :</span>
@@ -142,13 +147,11 @@
         <header class="section-head">
           <span class="section-index" aria-hidden="true">02</span>
           <h2 class="section-title" id="components-title"><span data-i18n="componentsTitle">Composantes</span></h2>
-          <p class="section-count" id="components-count">Non affiché</p>
+          <p class="section-count" id="components-count">Instantané</p>
         </header>
-
-        <!-- No component row is invented before status.json is read. -->
-        <p class="board-note" id="components-note" data-i18n="componentsNoteLoading" hidden>L'état publié n'est pas affiché.</p>
+        <p class="board-note" id="components-note" hidden>Instantané statique en cours de génération.</p>
         <ul class="components" id="components-list"></ul>
-        <p class="quiet" id="components-empty">L'état publié n'est pas affiché.</p>
+        <p class="quiet" id="components-empty">Instantané statique en cours de génération.</p>
       </div>
     </section>
 
@@ -157,13 +160,13 @@
         <header class="section-head">
           <span class="section-index" aria-hidden="true">03</span>
           <h2 class="section-title" id="incidents-title"><span data-i18n="incidentsTitle">Incidents</span></h2>
-          <p class="section-count" id="incidents-count">Non affiché</p>
+          <p class="section-count" id="incidents-count">Instantané</p>
         </header>
-
         <ol class="incidents" id="incidents-list"></ol>
-        <p class="quiet" id="incidents-empty">L'état publié n'est pas affiché.</p>
+        <p class="quiet" id="incidents-empty">Instantané statique en cours de génération.</p>
       </div>
     </section>
+    <!-- snapshot:end -->
   </main>
 
   <footer class="sbk-footer status-footer">
@@ -174,7 +177,7 @@
       </p>
       <p class="status-footer__snapshot">
         <span class="micro" data-i18n="footerSnapshot">Instantané</span>
-        <span id="snapshot-time">Non affiché</span>
+        <span id="snapshot-time">{{snapshot:footer}}</span>
       </p>
       <p class="status-footer__source">
         <span class="micro" data-i18n="footerSource">Fichier publié</span>

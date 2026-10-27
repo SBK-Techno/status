@@ -17,6 +17,16 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import site_build
+import status_snapshot
+from status_snapshot import (
+    STATUS_LABELS_FR,
+    document_digest,
+    format_stamp,
+    parse_timestamp as parse_snapshot_timestamp,
+    snapshot_state,
+)
+
 STATUSES = {
     "operational",
     "degraded",
@@ -29,7 +39,14 @@ INCIDENT_STATUSES = {"investigating", "identified", "monitoring", "resolved"}
 TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 MAX_LIFETIME = timedelta(minutes=15)
 FUTURE_SKEW = timedelta(minutes=5)
-NO_JS_PHRASE = "l'état publié n'est pas affiché"
+SNAPSHOT_ATTR = re.compile(r'data-snapshot-at="([^"]+)"')
+DIGEST_ATTR = re.compile(r'data-status-digest="([0-9a-f]{64})"')
+CSP_META = re.compile(
+    r'<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]*)"',
+    re.IGNORECASE,
+)
+HASHED_SITE_ASSET = re.compile(r"^assets/[a-z0-9-]+\.[0-9a-f]{12}\.(?:css|js)$")
+PRINT_TOKEN = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
 HEADER_LOGO_TOKEN = "--sbk-logo-header"
 # WCAG 1.4.11 exempts logotypes. The brand-approved reverse lockup carries one
 # #2255BC mark that cannot reach 3:1 on any uniform surface that also keeps its
@@ -62,7 +79,15 @@ INCIDENT_FIELDS = {
     "summary_en",
 }
 CNAME = b"status.ia.sbktechno.com\n"
-REQUIRED_FILES = ("index.html", "404.html", "styles.css", "app.js", "status-model.js")
+REQUIRED_FILES = (
+    "index.html",
+    "404.html",
+    "styles.css",
+    "app.js",
+    "status-model.js",
+    "site.manifest.json",
+    "templates/csp.txt",
+)
 SITE_HOST = "status.ia.sbktechno.com"
 DARK_SELECTOR = ':root[data-theme="dark"]'
 BRAND_PROPERTY = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
@@ -72,7 +97,6 @@ SVG_TAG = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
 SVG_DIMENSION = re.compile(r'\b(width|height)="([0-9]+(?:\.[0-9]+)?)"')
 SVG_FILL = re.compile(r'fill="(#[0-9A-Fa-f]{6})"', re.IGNORECASE)
 CSS_BLOCK = re.compile(r"(?s)([^{}]+)\{([^{}]*)\}")
-HARDCODED_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 STORAGE_PATTERNS = (
     (re.compile(r"\blocalStorage\b"), "localStorage"),
     (re.compile(r"\bsessionStorage\b"), "sessionStorage"),
@@ -506,102 +530,356 @@ def validate_no_storage(sources: dict[str, str]) -> list[str]:
     return errors
 
 
-def validate_no_js_snapshot(name: str, text: str) -> list[str]:
-    """The static page must not present a status, count, or time it cannot have read."""
+def element_text(node: Element | None) -> str:
+    if node is None:
+        return ""
+    return re.sub(r"\s+", " ", node.text()).strip()
+
+
+def first_time(node: Element | None) -> Element | None:
+    if node is None:
+        return None
+    return next(node.find_all("time"), None)
+
+
+def ordered_rows(node: Element | None, tag: str = "li") -> list[Element]:
+    if node is None:
+        return []
+    return [
+        child
+        for child in node.children
+        if isinstance(child, Element) and child.tag == tag
+    ]
+
+
+def validate_snapshot(
+    name: str,
+    text: str,
+    document: dict,
+    status_bytes: bytes,
+) -> list[str]:
+    """Re-render the document and reject a page that claims more than it.
+
+    The snapshot is tied to the exact status.json bytes by its digest and to
+    the freshness instant it records. A stale or unconfirmed heartbeat may not
+    leave a live-looking headline, a confirmed row, or the publisher summary on
+    the page.
+    """
     errors: list[str] = []
     page = parse_page(text)
-    if next(page.find_all("time"), None) is not None:
+    body = next(page.find_all("body"), None)
+    if body is None:
+        return [f"{name}: missing <body>"]
+
+    snapshot_raw = body.attrs.get("data-snapshot-at", "").strip()
+    digest = body.attrs.get("data-status-digest", "").strip()
+    snapshot_at = parse_snapshot_timestamp(snapshot_raw)
+    if snapshot_at is None:
         errors.append(
-            f"{name}: the static snapshot must not hard-code <time> elements; "
-            "times come from status.json only after JavaScript reads it"
+            f"{name}: body data-snapshot-at must be a UTC timestamp ending in Z"
         )
-    if HARDCODED_TIMESTAMP.search(text):
+    if digest != document_digest(status_bytes):
         errors.append(
-            f"{name}: the static snapshot must not hard-code a timestamp"
+            f"{name}: data-status-digest does not match the exact status.json bytes"
+        )
+    if snapshot_at is None:
+        return errors
+
+    expected = snapshot_state(document, snapshot_at)
+    hero = next(page.find_all(element_id="hero"), None)
+    if hero is None:
+        return errors + [f"{name}: missing #hero"]
+    if "hidden" in hero.attrs:
+        errors.append(f"{name}: #hero must be visible in the static snapshot")
+    if hero.attrs.get("data-status") != expected["headline"]:
+        errors.append(
+            f"{name}: #hero data-status {hero.attrs.get('data-status')!r} "
+            f"must be {expected['headline']!r} for this heartbeat"
         )
 
     status_word = next(page.find_all(element_id="hero-status-text"), None)
-    word = status_word.text().strip().lower() if status_word is not None else ""
-    if not word or "non affiché" not in word:
+    if element_text(status_word) != expected["overall_word"]:
         errors.append(
-            f"{name}: the no-JS hero must say the published state is not displayed, "
-            "not present a status word"
+            f"{name}: #hero-status-text {element_text(status_word)!r} "
+            f"must be {expected['overall_word']!r} for this heartbeat"
+        )
+    elif aria_hidden(status_word):
+        errors.append(
+            f"{name}: #hero-status-text must expose the status as text"
         )
 
     summary = next(page.find_all(element_id="overall-summary"), None)
-    summary_text = summary.text().strip().lower() if summary is not None else ""
-    if NO_JS_PHRASE not in summary_text:
+    if element_text(summary) != expected["summary"]:
         errors.append(
-            f"{name}: the no-JS summary must say {NO_JS_PHRASE!r}"
+            f"{name}: #overall-summary does not match the snapshot summary; "
+            "a stale document must use the stale copy, not the publisher claim"
+        )
+
+    stale = next(page.find_all(element_id="stale-banner"), None)
+    if stale is None:
+        errors.append(f"{name}: missing #stale-banner")
+    else:
+        visible = "hidden" not in stale.attrs
+        if expected["banner"] is None and visible:
+            errors.append(
+                f"{name}: #stale-banner must stay hidden for a fresh heartbeat"
+            )
+        if expected["banner"] is not None:
+            if not visible:
+                errors.append(
+                    f"{name}: #stale-banner must be visible for a {expected['reason']} snapshot"
+                )
+            if stale.attrs.get("role", "").strip().lower() != "status":
+                errors.append(f"{name}: #stale-banner must use role='status'")
+            if stale.attrs.get("data-reason") != expected["reason"]:
+                errors.append(
+                    f"{name}: #stale-banner data-reason must be "
+                    f"{expected['reason']!r}"
+                )
+            title = next(stale.find_all(element_id="stale-title"), None)
+            body_text = next(stale.find_all(element_id="stale-text"), None)
+            if element_text(title) != expected["banner"]["title"]:
+                errors.append(
+                    f"{name}: #stale-title must be {expected['banner']['title']!r}"
+                )
+            if element_text(body_text) != expected["banner"]["text"]:
+                errors.append(
+                    f"{name}: #stale-text must be {expected['banner']['text']!r}"
+                )
+
+    error_banner = next(page.find_all(element_id="fetch-error"), None)
+    if error_banner is None:
+        errors.append(f"{name}: missing #fetch-error")
+    elif "hidden" not in error_banner.attrs:
+        errors.append(
+            f"{name}: #fetch-error must stay hidden in the static snapshot"
+        )
+    if (
+        stale is not None
+        and error_banner is not None
+        and "hidden" not in stale.attrs
+        and "hidden" not in error_banner.attrs
+    ):
+        errors.append(
+            f"{name}: the fetch error and the stale notice must never be visible together"
         )
 
     components = next(page.find_all("ul", element_id="components-list"), None)
-    rows = [
-        child
-        for child in (components.children if components is not None else [])
-        if isinstance(child, Element) and child.tag == "li"
-    ]
-    if rows:
+    rows = ordered_rows(components)
+    if len(rows) != len(expected["components"]):
         errors.append(
-            f"{name}: the no-JS component list must be empty; a row would be an "
-            "unread component"
+            f"{name}: #components-list has {len(rows)} rows, "
+            f"the document has {len(expected['components'])}"
+        )
+    else:
+        for index, (row, component) in enumerate(
+            zip(rows, expected["components"]), 1
+        ):
+            heading = next(row.find_all("h3"), None)
+            pill = next(row.find_all("span", class_name="pill"), None)
+            if "component" not in classes(row):
+                errors.append(f"{name}: component row {index} must use class 'component'")
+            if "hidden" in row.attrs:
+                errors.append(
+                    f"{name}: component row {index} must be visible without JavaScript"
+                )
+            if row.attrs.get("data-status") != component["status"]:
+                errors.append(
+                    f"{name}: component row {index} data-status must be "
+                    f"{component['status']!r}"
+                )
+            if element_text(heading) != component["label"]:
+                errors.append(
+                    f"{name}: component row {index} name must be {component['label']!r}"
+                )
+            if pill is None:
+                errors.append(f"{name}: component row {index} needs a text status label")
+            else:
+                if pill.attrs.get("data-status") != component["status"]:
+                    errors.append(
+                        f"{name}: component row {index} pill status must be "
+                        f"{component['status']!r}"
+                    )
+                if element_text(pill) != component["status_label"]:
+                    errors.append(
+                        f"{name}: component row {index} pill must read "
+                        f"{component['status_label']!r}"
+                    )
+            if next(row.find_all("p"), None) is not None:
+                errors.append(
+                    f"{name}: component row {index} must stay compact; "
+                    "move shared explanation to #components-note"
+                )
+
+    count = next(page.find_all(element_id="components-count"), None)
+    if element_text(count) != expected["component_count_text"]:
+        errors.append(
+            f"{name}: #components-count must be "
+            f"{expected['component_count_text']!r}"
+        )
+
+    note = next(page.find_all(element_id="components-note"), None)
+    if note is None:
+        errors.append(f"{name}: missing #components-note")
+    else:
+        if "hidden" in note.attrs:
+            errors.append(f"{name}: #components-note must be visible with static rows")
+        if element_text(note) != expected["note"]:
+            errors.append(
+                f"{name}: #components-note must be {expected['note']!r}"
+            )
+
+    empty = next(page.find_all(element_id="components-empty"), None)
+    if empty is None:
+        errors.append(f"{name}: missing #components-empty")
+    elif expected["components"] and "hidden" not in empty.attrs:
+        errors.append(
+            f"{name}: #components-empty must be hidden when static rows are rendered"
+        )
+    elif not expected["components"] and "hidden" in empty.attrs:
+        errors.append(
+            f"{name}: #components-empty must be visible when no row is rendered"
         )
 
     vitals = next(page.find_all(element_id="vitals"), None)
-    if vitals is not None and "hidden" not in vitals.attrs:
+    if vitals is None:
+        errors.append(f"{name}: missing #vitals")
+    elif "hidden" not in vitals.attrs or vitals.attrs.get("data-total") != "0":
         errors.append(
-            f"{name}: #vitals must stay hidden until a payload has rendered"
+            f"{name}: #vitals must stay hidden with data-total='0' until "
+            "JavaScript has rendered a payload"
         )
 
-    for element_id in ("components-count", "incidents-count"):
-        node = next(page.find_all(element_id=element_id), None)
-        text_value = node.text().strip() if node is not None else ""
-        if not text_value:
-            errors.append(f"{name}: #{element_id} must expose its unknown state as text")
-        elif re.search(r"\d", text_value):
+    incidents = next(page.find_all("ol", element_id="incidents-list"), None)
+    incident_rows = ordered_rows(incidents)
+    if len(incident_rows) != len(expected["incidents"]):
+        errors.append(
+            f"{name}: #incidents-list has {len(incident_rows)} rows, "
+            f"the document has {len(expected['incidents'])}"
+        )
+    else:
+        for index, (row, incident) in enumerate(
+            zip(incident_rows, expected["incidents"]), 1
+        ):
+            title = next(row.find_all("h3"), None)
+            pill = next(row.find_all("span", class_name="pill"), None)
+            if element_text(title) != incident["title"]:
+                errors.append(
+                    f"{name}: incident row {index} title must be {incident['title']!r}"
+                )
+            if pill is None or pill.attrs.get("data-status") != incident["status"]:
+                errors.append(
+                    f"{name}: incident row {index} pill status must be "
+                    f"{incident['status']!r}"
+                )
+            elif element_text(pill) != incident["status_label"]:
+                errors.append(
+                    f"{name}: incident row {index} pill must read "
+                    f"{incident['status_label']!r}"
+                )
+            started = parse_snapshot_timestamp(incident["started_at"])
+            updated = parse_snapshot_timestamp(incident["updated_at"])
+            datetimes = {
+                node.attrs.get("datetime")
+                for node in row.find_all("time")
+            }
+            if started is not None and status_snapshot.iso(started) not in datetimes:
+                errors.append(
+                    f"{name}: incident row {index} must show its started_at time"
+                )
+            if updated is not None and status_snapshot.iso(updated) not in datetimes:
+                errors.append(
+                    f"{name}: incident row {index} must show its updated_at time"
+                )
+
+    incident_count = next(page.find_all(element_id="incidents-count"), None)
+    if element_text(incident_count) != expected["incidents_count_text"]:
+        errors.append(
+            f"{name}: #incidents-count must be "
+            f"{expected['incidents_count_text']!r}"
+        )
+    incident_empty = next(page.find_all(element_id="incidents-empty"), None)
+    if incident_empty is None:
+        errors.append(f"{name}: missing #incidents-empty")
+    elif expected["incidents"] and "hidden" not in incident_empty.attrs:
+        errors.append(
+            f"{name}: #incidents-empty must be hidden when incidents are shown"
+        )
+    elif not expected["incidents"] and "hidden" in incident_empty.attrs:
+        errors.append(
+            f"{name}: #incidents-empty must be visible when the journal is empty"
+        )
+
+    marker = next(page.find_all(element_id="snapshot-marker"), None)
+    if marker is None:
+        errors.append(f"{name}: missing #snapshot-marker")
+    else:
+        if marker.attrs.get("data-snapshot-state") != expected["reason"]:
             errors.append(
-                f"{name}: #{element_id} must not claim a count before status.json is read"
+                f"{name}: #snapshot-marker data-snapshot-state must be "
+                f"{expected['reason']!r}"
+            )
+        marker_time = first_time(marker)
+        if expected["generated_iso"] is None:
+            if marker_time is not None:
+                errors.append(
+                    f"{name}: #snapshot-marker must not show a time without a heartbeat"
+                )
+            if "aucun signal" not in element_text(marker).lower():
+                errors.append(
+                    f"{name}: #snapshot-marker must say no signal was received"
+                )
+        elif marker_time is None or marker_time.attrs.get("datetime") != expected["generated_iso"]:
+            errors.append(
+                f"{name}: #snapshot-marker must carry the generated_at time"
             )
 
-    for element_id in ("fetch-error", "stale-banner"):
+    for element_id in ("hero-signal",):
         node = next(page.find_all(element_id=element_id), None)
-        if node is None:
-            errors.append(f"{name}: missing #{element_id}")
-        elif "hidden" not in node.attrs:
+        if expected["generated_iso"] is None:
+            if element_text(node) != "Aucun":
+                errors.append(f"{name}: #{element_id} must read 'Aucun'")
+        else:
+            stamp = first_time(node)
+            if stamp is None or stamp.attrs.get("datetime") != expected["generated_iso"]:
+                errors.append(
+                    f"{name}: #{element_id} must carry generated_at as a <time>"
+                )
+            elif element_text(stamp) != format_stamp(expected["generated"]):
+                errors.append(
+                    f"{name}: #{element_id} must render the generated_at stamp"
+                )
+
+    checked = next(page.find_all(element_id="hero-checked"), None)
+    checked_time = first_time(checked)
+    if (
+        checked_time is None
+        or checked_time.attrs.get("datetime") != expected["snapshot_iso"]
+    ):
+        errors.append(
+            f"{name}: #hero-checked must record the snapshot instant, not a live claim"
+        )
+
+    footer_time = next(page.find_all(element_id="snapshot-time"), None)
+    if expected["generated_iso"] is None:
+        if element_text(footer_time) != "Aucun":
+            errors.append(f"{name}: #snapshot-time must read 'Aucun' without a heartbeat")
+    else:
+        stamp = first_time(footer_time)
+        if stamp is None or stamp.attrs.get("datetime") != expected["generated_iso"]:
             errors.append(
-                f"{name}: #{element_id} must stay hidden until its own presentation state is active"
+                f"{name}: #snapshot-time must carry generated_at as a <time>"
             )
-
-    components_note = next(page.find_all(element_id="components-note"), None)
-    if components_note is None:
-        errors.append(f"{name}: missing #components-note")
-    elif "hidden" not in components_note.attrs:
-        errors.append(
-            f"{name}: #components-note must stay hidden before status.json is read"
-        )
-
-    components_empty = next(page.find_all(element_id="components-empty"), None)
-    if components_empty is None or "hidden" in components_empty.attrs:
-        errors.append(
-            f"{name}: #components-empty must be visible without JavaScript"
-        )
-    elif NO_JS_PHRASE not in components_empty.text().strip().lower():
-        errors.append(
-            f"{name}: #components-empty must use the plain fallback {NO_JS_PHRASE!r}"
-        )
-
-    incidents = next(page.find_all(element_id="incidents-empty"), None)
-    if incidents is None or NO_JS_PHRASE not in incidents.text().strip().lower():
-        errors.append(
-            f"{name}: the no-JS incident note must use the plain fallback "
-            f"{NO_JS_PHRASE!r}"
-        )
 
     noscript = next(page.find_all("noscript"), None)
     if noscript is None or not noscript.text().strip():
         errors.append(f"{name}: <noscript> must explain the static snapshot")
     elif "status.json" not in noscript.text():
         errors.append(f"{name}: <noscript> must link or name status.json")
+    elif "ne lit pas" in noscript.text().lower():
+        errors.append(
+            f"{name}: <noscript> must not claim the page cannot read the status"
+        )
     return errors
 
 
@@ -611,6 +889,7 @@ def validate_page(
     *,
     require_status: bool = False,
     theme_color: str | None = None,
+    csp: str | None = None,
 ) -> list[str]:
     root = parse_page(text)
     errors: list[str] = []
@@ -675,13 +954,34 @@ def validate_page(
                 f"token {theme_color!r}"
             )
 
+    csp_metas = [
+        node
+        for node in root.find_all("meta")
+        if node.attrs.get("http-equiv", "").lower() == "content-security-policy"
+    ]
+    if len(csp_metas) != 1:
+        errors.append(f"{name}: must declare exactly one Content-Security-Policy meta")
+    else:
+        policy = csp_metas[0].attrs.get("content", "").strip()
+        if "frame-ancestors" in policy:
+            errors.append(
+                f"{name}: frame-ancestors is ignored in a meta CSP; remove it "
+                "and set it at the edge"
+            )
+        if csp is not None and policy != csp:
+            errors.append(
+                f"{name}: Content-Security-Policy must equal templates/csp.txt"
+            )
+
     brand_links = [
         node for node in root.find_all("a") if "sbk-brand" in classes(node)
     ]
     if not brand_links:
         errors.append(f"{name}: missing the .sbk-brand header mark link")
     else:
-        mark = next(brand_links[0].find_all("img"), None)
+        mark = next(
+            brand_links[0].find_all("img", class_name="status-brand__mark"), None
+        )
         if mark is None:
             errors.append(f"{name}: the .sbk-brand link must contain the header mark")
         else:
@@ -824,6 +1124,13 @@ def validate_page(
         if summary is None or not summary.text().strip():
             errors.append(f"{name}: #overall-summary must contain static status text")
 
+        marker = next(root.find_all(element_id="snapshot-marker"), None)
+        if marker is None or not marker.text().strip():
+            errors.append(
+                f"{name}: #snapshot-marker must state the snapshot instant and "
+                "that it may no longer be current"
+            )
+
         components = next(root.find_all("ul", element_id="components-list"), None)
         rows: list[Element] = []
         if components is None:
@@ -924,19 +1231,10 @@ def validate_page(
             total = vitals.attrs.get("data-total", "").strip()
             if not total.isdigit():
                 errors.append(f"{name}: #vitals must declare a numeric data-total")
-            elif not rows:
-                if "hidden" not in vitals.attrs:
-                    errors.append(
-                        f"{name}: #vitals must stay hidden until a payload renders"
-                    )
-                if int(total) != 0:
-                    errors.append(
-                        f"{name}: #vitals data-total must be 0 before a payload renders"
-                    )
-            elif int(total) != len(rows):
+            elif "hidden" not in vitals.attrs or int(total) != 0:
                 errors.append(
-                    f"{name}: #vitals data-total {total!r} must match the "
-                    f"{len(rows)} static component rows"
+                    f"{name}: #vitals must stay hidden with data-total='0' "
+                    "until JavaScript has rendered a payload"
                 )
             segments = {
                 node.attrs.get("data-vital", "")
@@ -1043,7 +1341,8 @@ def validate_brand_marks(
     root: Path,
     pages: dict[str, str],
     manifest: dict,
-    stylesheets: dict[str, str],
+    site_css: str,
+    brand_css: str,
     canvas: str,
     plate: str | None,
 ) -> list[str]:
@@ -1101,15 +1400,8 @@ def validate_brand_marks(
                     f"the {footer_surface} plate, below the 4.5:1 "
                     "meaningful-graphic minimum"
                 )
-    stylesheet = stylesheets.get("styles.css", "")
-    brand_stylesheet = next(
-        (
-            text
-            for name, text in stylesheets.items()
-            if re.fullmatch(r"brand\.[0-9a-f]{12}\.css", name)
-        ),
-        "",
-    )
+    stylesheet = without_print_block(site_css)
+    brand_stylesheet = brand_css
 
     # Measure the asset the page actually references against the surface the
     # stylesheet actually paints, not a colour copied into the validator.
@@ -1242,7 +1534,9 @@ def validate_brand_marks(
             continue
         if not brand_link.attrs.get("aria-label", "").strip():
             errors.append(f"{name}: the header brand link needs an accessible name")
-        mark = next(brand_link.find_all("img"), None)
+        mark = next(
+            brand_link.find_all("img", class_name="status-brand__mark"), None
+        )
         if mark is None:
             continue
         if isinstance(reverse_file, str):
@@ -1324,8 +1618,394 @@ def validate_manifest_assets(
     return errors
 
 
+def stylesheet_links(page: Element) -> list[Element]:
+    return [
+        node
+        for node in page.find_all("link")
+        if "stylesheet" in node.attrs.get("rel", "").lower().split()
+    ]
+
+
+def validate_csp(root: Path) -> tuple[str | None, list[str]]:
+    try:
+        csp = site_build.read_csp(root)
+    except (site_build.BuildError, OSError) as exc:
+        return None, [str(exc)]
+    errors: list[str] = []
+    for forbidden in ("'unsafe-inline'", "'unsafe-eval'", "*"):
+        if forbidden in csp:
+            errors.append(f"templates/csp.txt must not allow {forbidden}")
+    required = {
+        "default-src 'none'",
+        "style-src 'self'",
+        "script-src 'self'",
+        "font-src 'self'",
+        "img-src 'self' data:",
+        "connect-src 'self'",
+        "base-uri 'none'",
+        "form-action 'none'",
+    }
+    directives = {part.strip() for part in csp.split(";") if part.strip()}
+    for directive in sorted(required):
+        if directive not in directives:
+            errors.append(f"templates/csp.txt is missing {directive!r}")
+    return csp, errors
+
+
+def validate_brand_links(
+    root: Path, pages: dict[str, str], manifest: dict
+) -> list[str]:
+    """Exactly one brand sheet per page, and it must be the manifest's sheet."""
+    errors: list[str] = []
+    entries = [
+        asset
+        for asset in manifest["assets"]
+        if isinstance(asset, dict)
+        and asset.get("name") == "brand.css"
+        and asset.get("publish")
+    ]
+    if len(entries) != 1:
+        return [
+            "brand.manifest.json must publish exactly one brand.css "
+            f"(found {len(entries)})"
+        ]
+    entry = entries[0]
+    brand_file = entry.get("file")
+    if not isinstance(brand_file, str) or not re.fullmatch(
+        r"brand\.[0-9a-f]{12}\.css", brand_file
+    ):
+        return ["brand.manifest.json brand.css must use brand.<12 hex>.css"]
+
+    path = root / brand_file
+    if not path.is_file():
+        errors.append(f"{brand_file}: brand stylesheet is missing")
+    else:
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != entry.get("sha256"):
+            errors.append(f"{brand_file}: SHA-256 does not match the manifest")
+        if len(data) != entry.get("bytes"):
+            errors.append(f"{brand_file}: byte size does not match the manifest")
+
+    for name, text in pages.items():
+        page = parse_page(text)
+        links = [
+            link
+            for link in stylesheet_links(page)
+            if re.fullmatch(r"brand\.[0-9a-f]{12}\.css", Path(link.attrs.get("href", "")).name)
+        ]
+        if len(links) != 1:
+            errors.append(
+                f"{name}: must link exactly one brand.<hash>.css stylesheet "
+                f"(found {len(links)})"
+            )
+            continue
+        href = links[0].attrs.get("href", "").strip()
+        local = local_site_path(href)
+        if local is None or local != brand_file:
+            errors.append(
+                f"{name}: brand stylesheet {href!r} must be the manifest entry "
+                f"{brand_file!r}"
+            )
+    return errors
+
+
+def validate_site_manifest(
+    root: Path, pages: dict[str, str], manifest: dict
+) -> list[str]:
+    errors: list[str] = []
+    try:
+        site_manifest = site_build.load_site_manifest(root)
+    except (site_build.BuildError, OSError, json.JSONDecodeError) as exc:
+        return [str(exc)]
+    assets = site_manifest["assets"]
+    for name, asset in assets.items():
+        file = asset.get("file")
+        if not isinstance(file, str) or not HASHED_SITE_ASSET.fullmatch(file):
+            errors.append(
+                f"site.manifest.json: {name!r} must use assets/<name>.<12 hex>.<css|js>"
+            )
+            continue
+        path = root / file
+        if not path.is_file():
+            errors.append(f"{file}: generated site asset is missing")
+            continue
+        data = path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != asset.get("sha256"):
+            errors.append(f"{file}: SHA-256 does not match site.manifest.json")
+        if len(data) != asset.get("bytes"):
+            errors.append(f"{file}: byte size does not match site.manifest.json")
+        hash_match = re.fullmatch(
+            r"assets/[a-z0-9-]+\.([0-9a-f]{12})\.(?:css|js)", file
+        )
+        if hash_match is None or hash_match.group(1) != digest[:12]:
+            errors.append(
+                f"{file}: filename must carry the first 12 hex characters of "
+                "the asset digest"
+            )
+        source = asset.get("source")
+        if source is not None:
+            source_path = root / source
+            if not source_path.is_file():
+                errors.append(f"{source}: site asset source is missing")
+            elif source_path.read_bytes() != data:
+                errors.append(f"{file}: must be an exact copy of {source}")
+
+    expected_links = {
+        "index.html": {
+            "styles.css": "stylesheet",
+            "print.css": "stylesheet",
+            "app.js": "script",
+            "status-model.js": "script",
+        },
+        "404.html": {
+            "styles.css": "stylesheet",
+            "print.css": "stylesheet",
+        },
+    }
+    for name, text in pages.items():
+        page = parse_page(text)
+        linked = {
+            Path(link.attrs.get("href", "")).name: link
+            for link in stylesheet_links(page)
+        }
+        scripts = {
+            Path(script.attrs.get("src", "")).name: script
+            for script in page.find_all("script")
+            if script.attrs.get("src")
+        }
+        for unhashed in ("styles.css", "app.js", "status-model.js"):
+            if re.search(
+                rf'(?:href|src)="(?:/)?{re.escape(unhashed)}(?:"|\?)',
+                text,
+            ):
+                errors.append(
+                    f"{name}: must not reference the unhashed {unhashed}; "
+                    "use the content-hashed site asset"
+                )
+        for logical, kind in expected_links.get(name, {}).items():
+            file = Path(assets[logical]["file"]).name if logical in assets else ""
+            if not file:
+                continue
+            nodes = linked if kind == "stylesheet" else scripts
+            if file not in nodes:
+                errors.append(f"{name}: must reference the generated {logical}")
+            elif kind == "script" and "defer" not in nodes[file].attrs:
+                errors.append(f"{name}: {logical} must load with defer")
+        for logical in ("app.js", "status-model.js"):
+            if logical not in expected_links.get(name, {}):
+                file = Path(assets[logical]["file"]).name
+                if file in scripts:
+                    errors.append(f"{name}: must not load {logical}")
+        for logical in ("styles.css", "print.css"):
+            if logical not in expected_links.get(name, {}):
+                continue
+            file = Path(assets[logical]["file"]).name
+            media = linked.get(file)
+            if media is not None:
+                if logical == "print.css" and media.attrs.get("media", "").strip().lower() != "print":
+                    errors.append(f"{name}: print.css must use media='print'")
+                if logical == "styles.css" and media.attrs.get("media", "").strip().lower() == "print":
+                    errors.append(f"{name}: styles.css must not be print-only")
+
+    brand_entry = next(
+        (
+            asset
+            for asset in manifest["assets"]
+            if isinstance(asset, dict) and asset.get("name") == "brand.css"
+        ),
+        None,
+    )
+    if brand_entry is None:
+        errors.append("brand.manifest.json must publish brand.css")
+    return errors
+
+
+def print_block(stylesheet: str) -> str:
+    marker = "@media print"
+    index = stylesheet.find(marker)
+    if index < 0:
+        return ""
+    opening = stylesheet.find("{", index)
+    if opening < 0:
+        return ""
+    depth = 0
+    for position in range(opening, len(stylesheet)):
+        character = stylesheet[position]
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return stylesheet[opening + 1 : position]
+    return ""
+
+
+def without_print_block(stylesheet: str) -> str:
+    """Drop the print block so screen measurements read the screen rules."""
+    marker = "@media print"
+    index = stylesheet.find(marker)
+    if index < 0:
+        return stylesheet
+    opening = stylesheet.find("{", index)
+    if opening < 0:
+        return stylesheet
+    depth = 0
+    for position in range(opening, len(stylesheet)):
+        character = stylesheet[position]
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return stylesheet[:index] + stylesheet[position + 1 :]
+    return stylesheet
+
+
+def validate_print(
+    root: Path,
+    pages: dict[str, str],
+    manifest: dict,
+) -> list[str]:
+    errors: list[str] = []
+    try:
+        site_manifest = site_build.load_site_manifest(root)["assets"]
+        brand_file, brand_css = site_build.brand_stylesheet(root, manifest)
+        print_css = (root / site_manifest["print.css"]["file"]).read_text(
+            encoding="utf-8"
+        )
+    except (site_build.BuildError, OSError, KeyError) as exc:
+        return [str(exc)]
+    styles_css = (root / "styles.css").read_text(encoding="utf-8")
+    expected_print = site_build.render_print_palette(brand_css, brand_file)
+    if print_css != expected_print:
+        errors.append(
+            "print.css is not the generated light palette for brand.css; "
+            "run make brand"
+        )
+    block = print_block(styles_css)
+    if not block:
+        return errors + ["styles.css: missing an @media print block"]
+    declaration = re.compile(r"(?i)(?:^|[;{])\s*(?:-\w+-)?print-color-adjust\s*:")
+    if declaration.search(styles_css) or declaration.search(print_css):
+        errors.append(
+            "print must not rely on print-color-adjust; its contrast is measured "
+            "with backgrounds dropped"
+        )
+    for selector in (".status-brand .status-brand__mark",):
+        rule = css_rule(block, selector)
+        if rule.get("display") != "none":
+            errors.append(
+                f"styles.css: @media print must hide {selector} (the reverse "
+                "lockup is invisible on a light sheet)"
+            )
+    rule = css_rule(block, ".status-brand .status-brand__print-mark")
+    if rule.get("display") in (None, "", "none"):
+        errors.append(
+            "styles.css: @media print must show .status-brand__print-mark"
+        )
+    rule = css_rule(block, ".status-brand__print-wordmark")
+    if rule.get("display") in (None, "", "none"):
+        errors.append(
+            "styles.css: @media print must show .status-brand__print-wordmark"
+        )
+
+    light = brand_properties(brand_css, dark=False)
+    dark = brand_properties(brand_css, dark=True)
+    print_tokens = {
+        name: value.upper() for name, value in PRINT_TOKEN.findall(print_css)
+    }
+    if print_tokens != light:
+        errors.append(
+            "print.css must copy exactly the brand.css light colour tokens"
+        )
+    effective = {**dark, **print_tokens}
+    text_tokens = (
+        "--sbk-text",
+        "--sbk-text-muted",
+        "--sbk-text-faint",
+        "--sbk-live",
+        "--sbk-warning",
+        "--sbk-danger",
+        "--sbk-maintenance",
+        "--sbk-unknown",
+        "--sbk-signal",
+    )
+    for token in text_tokens:
+        try:
+            foreground = effective[token]
+            canvas_contrast = contrast_ratio(foreground, effective["--sbk-canvas"])
+            dropped_contrast = contrast_ratio(foreground, "#FFFFFF")
+        except KeyError as exc:
+            return errors + [f"print palette is missing {exc.args[0]}"]
+        if canvas_contrast < 4.5:
+            errors.append(
+                f"print {token} measures {canvas_contrast:.2f}:1 on the print "
+                "canvas, below the 4.5:1 minimum"
+            )
+        if dropped_contrast < 4.5:
+            errors.append(
+                f"print {token} measures {dropped_contrast:.2f}:1 when the "
+                "browser drops backgrounds, below the 4.5:1 minimum"
+            )
+
+    assets = {
+        asset.get("name"): asset
+        for asset in manifest["assets"]
+        if isinstance(asset, dict)
+    }
+    icon = assets.get(FOOTER_ICON)
+    if icon is None:
+        errors.append("brand.manifest.json must publish the print mark")
+    else:
+        fills = svg_fills(root / icon["file"])
+        for fill in sorted(fills):
+            for surface in (effective.get("--sbk-canvas"), "#FFFFFF"):
+                measured = contrast_ratio(fill, surface)
+                if measured < 4.5:
+                    errors.append(
+                        f"{icon['file']}: print mark fill {fill} measures "
+                        f"{measured:.2f}:1 on {surface}, below the 4.5:1 minimum"
+                    )
+        for name, text in pages.items():
+            page = parse_page(text)
+            mark = next(
+                page.find_all("img", class_name="status-brand__print-mark"), None
+            )
+            if mark is None:
+                errors.append(f"{name}: missing the print-safe mark")
+                continue
+            if mark.attrs.get("src", "").strip() != "/" + icon["file"]:
+                errors.append(
+                    f"{name}: the print mark must reference {icon['file']!r}"
+                )
+    return errors
+
+
+def validate_retention(root: Path) -> list[str]:
+    try:
+        import prune_assets
+    except ImportError as exc:  # pragma: no cover - packaging fault
+        return [f"cannot load the retention gate: {exc}"]
+    return prune_assets.retention_errors(root)
+
+
 def validate_site(root: Path) -> list[str]:
-    errors = validate_document(load_document(root / "status.json"))
+    errors: list[str] = []
+    status_path = root / "status.json"
+    status_bytes = b""
+    document: object = None
+    if not status_path.is_file():
+        errors.append("status.json is missing")
+    else:
+        status_bytes = status_path.read_bytes()
+        try:
+            document = json.loads(status_bytes)
+        except json.JSONDecodeError as exc:
+            errors.append(f"status.json is not valid JSON: {exc}")
+        if document is not None:
+            errors.extend(validate_document(document))
+
     manifest, manifest_errors = load_brand_manifest(root)
     errors.extend(manifest_errors)
     brand_colours: dict[str, str] = {}
@@ -1335,6 +2015,8 @@ def validate_site(root: Path) -> list[str]:
     theme_color = brand_colours.get("--sbk-canvas")
     if manifest is not None and theme_color is None:
         errors.append("brand.css: must declare --sbk-canvas in the dark theme")
+    csp, csp_errors = validate_csp(root)
+    errors.extend(csp_errors)
     cname = root / "CNAME"
     if not cname.is_file():
         errors.append("CNAME is missing")
@@ -1364,16 +2046,14 @@ def validate_site(root: Path) -> list[str]:
                 text,
                 require_status=(name == "index.html"),
                 theme_color=theme_color,
+                csp=csp,
             )
         )
 
     stylesheets: dict[str, str] = {}
     for name, text in pages.items():
         page_root = parse_page(text)
-        for link in page_root.find_all("link"):
-            rel = link.attrs.get("rel", "").lower().split()
-            if "stylesheet" not in rel:
-                continue
+        for link in stylesheet_links(page_root):
             href = link.attrs.get("href", "").strip()
             local = local_site_path(href)
             if local is None or local in stylesheets:
@@ -1390,21 +2070,43 @@ def validate_site(root: Path) -> list[str]:
             stylesheets[local] = css_text
             errors.extend(validate_css(local, css_text))
 
-    if manifest is not None and theme_color is not None:
+    if manifest is not None:
+        try:
+            brand_file, brand_css = site_build.brand_stylesheet(root, manifest)
+        except (site_build.BuildError, OSError) as exc:
+            errors.append(str(exc))
+            brand_file, brand_css = "", ""
+        site_css_path = root / "styles.css"
+        site_css = (
+            site_css_path.read_text(encoding="utf-8")
+            if site_css_path.is_file()
+            else ""
+        )
+        if theme_color is not None and brand_file:
+            errors.extend(
+                validate_brand_marks(
+                    root,
+                    pages,
+                    manifest,
+                    site_css,
+                    brand_css,
+                    theme_color,
+                    brand_colours.get("--sbk-text"),
+                )
+            )
+        errors.extend(validate_manifest_assets(root, manifest, pages, stylesheets))
+        errors.extend(validate_brand_links(root, pages, manifest))
+        errors.extend(validate_site_manifest(root, pages, manifest))
+        errors.extend(validate_print(root, pages, manifest))
+
+    if isinstance(document, dict) and "index.html" in pages:
         errors.extend(
-            validate_brand_marks(
-                root,
-                pages,
-                manifest,
-                stylesheets,
-                theme_color,
-                brand_colours.get("--sbk-text"),
+            validate_snapshot(
+                "index.html", pages["index.html"], document, status_bytes
             )
         )
-        errors.extend(validate_manifest_assets(root, manifest, pages, stylesheets))
+    errors.extend(validate_retention(root))
 
-    if "index.html" in pages:
-        errors.extend(validate_no_js_snapshot("index.html", pages["index.html"]))
     sources: dict[str, str] = dict(pages)
     sources.update(stylesheets)
     for name in ("app.js", "status-model.js", "templates/index.html", "templates/404.html"):
