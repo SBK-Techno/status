@@ -1,5 +1,42 @@
 {
   "version": 1,
   "retentionDays": 7,
-  "retired": []
+  "retired": [
+    {
+      "file": "archivo-400.4b9ff27fd9c6.woff2",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "archivo-700.f8c7935631ed.woff2",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "archivo-display.32488d08b473.woff2",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "archivo-italic-400.84377d8fd063.woff2",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "assets/print.e8eebda08685.css",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "brand.a423189168d5.css",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "fraunces-soft100-var.b8e2ade5f69c.woff2",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "ibm-plex-mono-400.e7383c9b2d82.woff2",
+      "retired_at": "2026-10-27T12:27:10Z"
+    },
+    {
+      "file": "ibm-plex-mono-500.8e00626281d5.woff2",
+      "retired_at": "2026-10-27T12:27:10Z"
+    }
+  ]
 }

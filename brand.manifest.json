@@ -4,43 +4,43 @@
   "assets": [
     {
       "name": "archivo-400.woff2",
-      "file": "archivo-400.4b9ff27fd9c6.woff2",
+      "file": "archivo-400.9708d725a531.woff2",
       "mediaType": "font/woff2",
       "publish": true,
-      "sha256": "4b9ff27fd9c65840eb324ab16e324bbebfecbe66f1685784e7a6c97d74ab75c0",
-      "bytes": 12432
+      "sha256": "9708d725a531fa3e20e5d64bc542b972fe4fe8593f85c9c8113057fdb146027b",
+      "bytes": 13704
+    },
+    {
+      "name": "archivo-600.woff2",
+      "file": "archivo-600.dc4b49d5506e.woff2",
+      "mediaType": "font/woff2",
+      "publish": true,
+      "sha256": "dc4b49d5506e70c330e0e46001cf11b717a0d212731a9f72d8d831112ca082f9",
+      "bytes": 12864
     },
     {
       "name": "archivo-700.woff2",
-      "file": "archivo-700.f8c7935631ed.woff2",
+      "file": "archivo-700.13d8ac9de104.woff2",
       "mediaType": "font/woff2",
       "publish": true,
-      "sha256": "f8c7935631edf0a37824f612ad7c94ca8cc113824842efff1a654b571ca876e2",
-      "bytes": 11608
-    },
-    {
-      "name": "archivo-display.woff2",
-      "file": "archivo-display.32488d08b473.woff2",
-      "mediaType": "font/woff2",
-      "publish": true,
-      "sha256": "32488d08b47323e2e9c4a6526fd62db28ca957e313661bf91cb6fe046bfe107e",
-      "bytes": 11816
+      "sha256": "13d8ac9de10407c23a078c5bb9114a23fb6aca6365885547d1e49086fd010164",
+      "bytes": 13560
     },
     {
       "name": "archivo-italic-400.woff2",
-      "file": "archivo-italic-400.84377d8fd063.woff2",
+      "file": "archivo-italic-400.b27556ff5c2a.woff2",
       "mediaType": "font/woff2",
       "publish": true,
-      "sha256": "84377d8fd063525351f583e315bf665c8af931ffe47bae7dc53c920b1adb2625",
-      "bytes": 54516
+      "sha256": "b27556ff5c2aa4691ad5ba36f30283c00b17d5f128d0ecb30dc86c8f18b48f01",
+      "bytes": 14976
     },
     {
       "name": "brand.css",
-      "file": "brand.a423189168d5.css",
+      "file": "brand.875bfe96a455.css",
       "mediaType": "text/css; charset=utf-8",
       "publish": true,
-      "sha256": "a423189168d510b64c12c5f1a45836cd159b76a7df23bc72a023f8f9c6af8d4b",
-      "bytes": 15318
+      "sha256": "875bfe96a4559a722e7848e9f431360d6749d8950b04fe27d50f38c2d4646343",
+      "bytes": 18923
     },
     {
       "name": "favicon.ico",
@@ -52,27 +52,27 @@
     },
     {
       "name": "fraunces-soft100-var.woff2",
-      "file": "fraunces-soft100-var.b8e2ade5f69c.woff2",
+      "file": "fraunces-soft100-var.d160f5e02486.woff2",
       "mediaType": "font/woff2",
       "publish": true,
-      "sha256": "b8e2ade5f69c869852fe204b189f63b1673ec50af6c6bc42f2c5ca563d653462",
-      "bytes": 68000
+      "sha256": "d160f5e02486e8ceb31cce7383159fbe4d08b95af831a4ad697ca6359d1e6f63",
+      "bytes": 68096
     },
     {
       "name": "ibm-plex-mono-400.woff2",
-      "file": "ibm-plex-mono-400.e7383c9b2d82.woff2",
+      "file": "ibm-plex-mono-400.11430b2c2e9e.woff2",
       "mediaType": "font/woff2",
       "publish": true,
-      "sha256": "e7383c9b2d82a6f22972ca6f2d3157ddb87491eb3d365c938c0008379475bdac",
-      "bytes": 15188
+      "sha256": "11430b2c2e9e324e2be6a7ad611f21d262245b5e669e11bb526fc8cef0afd10b",
+      "bytes": 15172
     },
     {
       "name": "ibm-plex-mono-500.woff2",
-      "file": "ibm-plex-mono-500.8e00626281d5.woff2",
+      "file": "ibm-plex-mono-500.67413018f8e9.woff2",
       "mediaType": "font/woff2",
       "publish": true,
-      "sha256": "8e00626281d5bb30ac2fffe48e63f5306a2796c8c5dc02b5229ee73fb168937e",
-      "bytes": 15504
+      "sha256": "67413018f8e90d8b8823859def1052a9f56928da963cd7703576ef9d0d6e42c3",
+      "bytes": 15440
     },
     {
       "name": "icon-color.svg",
