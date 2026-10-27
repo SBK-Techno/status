@@ -36,11 +36,11 @@
     },
     {
       "name": "brand.css",
-      "file": "brand.875bfe96a455.css",
+      "file": "brand.58ecc1098195.css",
       "mediaType": "text/css; charset=utf-8",
       "publish": true,
-      "sha256": "875bfe96a4559a722e7848e9f431360d6749d8950b04fe27d50f38c2d4646343",
-      "bytes": 18923
+      "sha256": "58ecc1098195f0ebcb4c63a6782d9a323dd54992e28cbd84de221bd642a9605a",
+      "bytes": 18924
     },
     {
       "name": "favicon.ico",
