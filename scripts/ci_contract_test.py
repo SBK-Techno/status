@@ -123,6 +123,7 @@ class GateContractTest(unittest.TestCase):
             "test": (
                 "python3 -m unittest discover -s scripts -p '*_test.py'"
             ),
+            "contract": "python3 scripts/ci_contract_test.py",
             "brand-check": (
                 "python3 scripts/check_generated.py --root \"$(STATUS_ROOT)\" "
                 "--platform \"$(PLATFORM_DIR)\" --brand \"$(BRAND_DIR)\""
@@ -136,6 +137,12 @@ class GateContractTest(unittest.TestCase):
             "statuscheck": (
                 './cmd/statuscheck -file "$(STATUS_ROOT)/status.json"'
             ),
+            "governance-check": (
+                'python3 scripts/check_governance.py --platform "$(PLATFORM_DIR)"'
+            ),
+            "actionlint": "$(GO) run $(ACTIONLINT) $$files",
+            "hook": "git config --local core.hooksPath .githooks",
+            "hook-check": "core.hooksPath is not .githooks",
             "lint": (
                 './cmd/brandlint -root "$(PLATFORM_DIR)" '
                 '-brand "$(BRAND_DIR)" -status "$(STATUS_ROOT)"'
@@ -148,13 +155,18 @@ class GateContractTest(unittest.TestCase):
                     make_recipe(self.makefile, target),
                     f"{target} no longer runs its canonical command",
                 )
-        for target in ("brand-check", "statuscheck", "lint"):
+        for target in ("brand-check", "statuscheck", "governance-check", "lint"):
             with self.subTest(toolchain=target):
                 self.assertIn(
                     "toolchain-check",
                     make_recipe(self.makefile, target).splitlines()[0],
                     f"{target} must verify the pinned checkouts first",
                 )
+        self.assertIn(
+            "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12",
+            make_variable(self.makefile, "ACTIONLINT"),
+            "actionlint must stay pinned to the reviewed release",
+        )
 
     def test_brand_generates_and_prunes(self) -> None:
         recipe = make_recipe(self.makefile, "brand")
@@ -385,6 +397,38 @@ class GateContractTest(unittest.TestCase):
                 workflow,
                 "toolchain checkout refs must stay inside the pinned composite action",
             )
+
+    def test_toolchain_reads_private_checkouts_with_deploy_keys(self) -> None:
+        checkouts: dict[str, str] = {}
+        for name, body, _ in steps(self.toolchain):
+            if "uses: actions/checkout@" not in body:
+                continue
+            repository = re.search(r"(?m)^\s+repository:\s*(\S+)\s*$", body)
+            self.assertIsNotNone(repository, name)
+            assert repository
+            checkouts[repository.group(1)] = body
+        credentials = {
+            "SBK-Techno/platform": "PLATFORM_READ_KEY",
+            "SBK-Techno/brand": "BRAND_READ_KEY",
+        }
+        self.assertEqual(set(checkouts), set(credentials))
+        for repository, secret in credentials.items():
+            with self.subTest(repository=repository):
+                body = checkouts[repository]
+                self.assertIn(
+                    f"ssh-key: ${{{{ secrets.{secret} }}}}",
+                    body,
+                    f"{repository} is private and needs the {secret} read key",
+                )
+                self.assertIsNone(
+                    re.search(r"(?m)^\s+(?:token|password):", body),
+                    f"{repository} must not receive a token in the checkout",
+                )
+                self.assertNotRegex(
+                    body,
+                    r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+                    "no key material may be committed",
+                )
 
     def test_actions_are_pinned_to_commit_shas(self) -> None:
         third_party: list[str] = []
