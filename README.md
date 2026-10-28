@@ -88,9 +88,33 @@ GitHub Pages sets a short cache on every response, including HTML; it does not l
 
 The future edge should set `Cache-Control: public, max-age=600, must-revalidate` for HTML and `public, max-age=31536000, immutable` for `assets/` and the hashed brand files. GitHub Pages cannot send those headers, and `immutable` is not safe to emulate with a meta tag. Until the edge exists, the hashed URLs are the mismatch protection.
 
+## Post-publish verification
+
+`make verify-published URL=https://status.ia.sbktechno.com/` proves that the live site is the artifact this repository built and the signed document it published. The check needs the deployed origin, so it is not part of `make validate` and never gates a commit. It is read-only, bounded (10 seconds per request, three redirects, a 16 MiB total response budget), and made for a local run after Pages finishes deploying. CI is billing-blocked, so the command is the post-publish step.
+
+The check list has one owner, `scripts/verify_published.py`:
+
+- `/status.json` is live, is `application/json`, has schema version 1, and passes the same document validator as the repository.
+- The live `status.json` bytes are identical to the committed `status.json`. The publish workflow writes that document only after `scripts/heartbeat_signature.py` verifies its HMAC-SHA256 signature, so this binds the live bytes to the signed publish artifact. HMAC is symmetric and the repository publishes no signature artifact: to verify the live bytes directly, pass the signature from the publish run and the key with `SIGNATURE=... STATUS_HEARTBEAT_HMAC=...`, or point at a key file with `HMAC_KEY_FILE=...`. The key and signature are never printed.
+- `/` and `/404.html` are live HTML and match the built pages byte for byte.
+- Every resource the pages reference is a manifest-owned, content-hashed asset recorded by `site.manifest.json` or `brand.manifest.json`, is live with a 200, and matches its recorded SHA-256, byte size, and media type. Fonts referenced by the brand stylesheet are checked the same way. Asset names come from the built pages and the generated manifests, never from a list in the check.
+- The page's `data-status-digest` equals the SHA-256 of the live `status.json`, and its `data-snapshot-at` equals the snapshot instant recorded by the built page.
+- HTML is cacheable for at most 600 seconds with an ETag or `Last-Modified` validator, and a conditional request returns 304 with an empty body. Content-hashed assets are either served `immutable` for at least a year, or, on GitHub Pages, served with the host's short cache; the content hash in the URL is the immutability guarantee because Pages does not let this repository set per-file headers. Pass `--host-policy edge` through `VERIFY_PUBLISHED_FLAGS` when the edge exists to require the immutable header.
+- No response sets a cookie, and `/assets/` or a directory path is not a listing.
+
+Exit status is `0` when every check passes, `1` when a published check fails, and `2` for a usage error. Paths are verified against the checked-out build, so run the command on a clean, current `main` after the publish commit and a Pages deployment.
+
+What it cannot prove:
+
+- that the HMAC was verified, without the key and the publish-run signature, because the repository publishes neither a public key nor a signature file;
+- a response header the host does not let this repository set (the GitHub Pages cache headers, HSTS, `X-Content-Type-Options`);
+- that a third-party resolver or browser cache is current; GitHub Pages itself caps every response at `max-age=600`.
+
+The offline suite for the verifier runs a loopback fixture origin built from the real site output. It covers a passing origin and one failure per check: missing asset, stale digest, bad schema version, bad signature, wrong HTML or asset cache, 304 with a body, missing 304, directory listing, `Set-Cookie`, wrong content type, an extra page reference, and a rebuilt asset name that the old origin does not serve. No test reaches the network.
+
 ## Heartbeat
 
-The platform `cmd/statuspublisher` probes the public surfaces, writes `status.json` atomically, signs the exact bytes with HMAC-SHA256, and dispatches `.github/workflows/publish.yml`. The workflow verifies the signature with the `STATUS_HEARTBEAT_HMAC` repository secret and writes those exact bytes to `status.json`. It then runs `make brand` to render the snapshot from the new document and to prune assets whose retention window expired, runs `make publish-check` to decide whether the signed heartbeat changes the publish surface, runs the same `make validate` gate as CI only when it does, and only then commits and pushes `status.json`, the rendered pages, both manifests, `asset-retention.json`, and any changed generated assets; Pages then deploys the branch. A duplicate payload, or a rebuild whose only difference is the snapshot instant, creates no commit and therefore no deploy. The publisher is implemented, but the host timer and credentials must be installed before the page leaves its stale seed.
+The platform `cmd/statuspublisher` probes the public surfaces, writes `status.json` atomically, signs the exact bytes with HMAC-SHA256, and dispatches `.github/workflows/publish.yml`. The workflow passes the payload and signature to `scripts/verify_heartbeat.py`, which shares `scripts/heartbeat_signature.py` with the post-publish check, verifies the signature with the `STATUS_HEARTBEAT_HMAC` repository secret, and writes those exact bytes to `status.json`. It then runs `make brand` to render the snapshot from the new document and to prune assets whose retention window expired, runs `make publish-check` to decide whether the signed heartbeat changes the publish surface, runs the same `make validate` gate as CI only when it does, and only then commits and pushes `status.json`, the rendered pages, both manifests, `asset-retention.json`, and any changed generated assets; Pages then deploys the branch. A duplicate payload, or a rebuild whose only difference is the snapshot instant, creates no commit and therefore no deploy. The publisher is implemented, but the host timer and credentials must be installed before the page leaves its stale seed.
 
 The host reads the key from `/run/secrets/status-heartbeat-hmac` and a fine-grained GitHub token with Actions write access on this repository from `/run/secrets/status-dispatch-token`. The HMAC value must equal the repository secret. Never commit either value.
 
@@ -222,6 +246,8 @@ After `make brand`, `make publish-check` answers whether the publish would chang
 - Every incident has the required fields and `updated_at` is not before `started_at`.
 - `CNAME` is exactly `status.ia.sbktechno.com` with a final newline.
 - `index.html`, `styles.css`, `app.js`, and `status-model.js` exist and are non-empty.
+
+`make verify-published URL=...` is the separate post-publish check. It is deliberately outside `GATE_TARGETS` because it needs the deployed origin; see [Post-publish verification](#post-publish-verification).
 
 `make validate` runs the document/site validator, the unit tests, `make brand-check`, `make render-check`, the retention check, the platform `statuscheck`, and `cmd/brandlint`. `scripts/ci_contract_test.py` parses the Makefile and both workflows: it fails if `make validate` stops expanding `GATE_TARGETS`, if a workflow grows an inline check or re-implements the publish decision, if the toolchain refs stop being full 40-hex commit SHAs, or if publish stops rebuilding, deciding, and validating before its commit. The Python suite runs `scripts/status_model_test.mjs` and `scripts/snapshot_contract_test.mjs` through Node, so the live browser model and the publish-time Python snapshot agree on loading, fresh, stale, null, future, aged, expired, and failed-fetch states.
 

@@ -15,6 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MAKEFILE = ROOT / "Makefile"
+README = ROOT / "README.md"
 VALIDATE_WORKFLOW = ROOT / ".github" / "workflows" / "validate.yml"
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 TOOLCHAIN_ACTION = ROOT / ".github" / "actions" / "toolchain" / "action.yml"
@@ -217,7 +218,26 @@ class GateContractTest(unittest.TestCase):
         self.assertIn("permissions:\n  contents: write", self.publish)
         self.assertIn("cancel-in-progress: false", self.publish)
 
+        workflow_steps = {name: body for name, body, _ in steps(self.publish)}
+        verification = workflow_steps["Verify the signed payload"]
         combined = "\n".join(command for _, command in commands)
+        self.assertIn(
+            "python3 scripts/verify_heartbeat.py --out status.json",
+            combined,
+            "publish must use the shared heartbeat verifier",
+        )
+        self.assertNotIn(
+            "import hmac",
+            combined,
+            "the HMAC contract must stay in scripts/heartbeat_signature.py",
+        )
+        for variable in ("STATUS_HEARTBEAT_HMAC", "PAYLOAD", "SIGNATURE"):
+            self.assertIn(
+                variable,
+                verification,
+                f"the signed payload step must pass {variable}",
+            )
+
         for duplicated in (
             "scripts/build_site.py",
             "scripts/validate_status.py",
@@ -287,6 +307,32 @@ class GateContractTest(unittest.TestCase):
                 'make publish-check PUBLISH_DECISION_FILE="$GITHUB_OUTPUT"',
                 "make validate",
             ],
+        )
+
+    def test_verify_published_is_a_documented_post_publish_step(self) -> None:
+        targets = make_variable(self.makefile, "GATE_TARGETS").split()
+        self.assertNotIn(
+            "verify-published",
+            targets,
+            "the published check needs the live origin and cannot gate a commit",
+        )
+        recipe = make_recipe(self.makefile, "verify-published")
+        self.assertIn(
+            'python3 scripts/verify_published.py --root "$(STATUS_ROOT)" '
+            '--url "$(URL)"',
+            recipe,
+        )
+        self.assertIn('--signature "$(SIGNATURE)"', recipe)
+        self.assertIn('--hmac-key-file "$(HMAC_KEY_FILE)"', recipe)
+        self.assertNotIn("--write", recipe)
+        self.assertIn("make verify-published URL=", read(README))
+        publish_commands = "\n".join(
+            command for _, command in run_steps(self.publish)
+        )
+        self.assertNotIn(
+            "verify-published",
+            publish_commands,
+            "the publish job cannot verify a Pages deployment it has not created yet",
         )
 
     # Pinned inputs ----------------------------------------------------

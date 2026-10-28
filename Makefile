@@ -9,6 +9,15 @@ GO ?= go
 PUBLISH_BASE ?= HEAD
 PUBLISH_DECISION_FILE ?=
 
+# Post-publish verification needs the deployed origin, so it is not in
+# GATE_TARGETS. SIGNATURE and HMAC_KEY_FILE enable direct HMAC verification;
+# without them the check binds the live bytes to the committed signed
+# document. STATUS_HEARTBEAT_HMAC supplies the key when no file is given.
+URL ?=
+SIGNATURE ?=
+HMAC_KEY_FILE ?=
+VERIFY_PUBLISHED_FLAGS ?=
+
 PLATFORM_DIR := $(abspath $(PLATFORM))
 BRAND_DIR := $(abspath $(BRAND))
 
@@ -18,7 +27,7 @@ BRAND_DIR := $(abspath $(BRAND))
 # stay full commit SHAs.
 GATE_TARGETS := status-check test brand-check render-check assets-check statuscheck lint
 
-.PHONY: $(GATE_TARGETS) brand prune publish-check toolchain-check validate
+.PHONY: $(GATE_TARGETS) brand prune publish-check toolchain-check validate verify-published
 
 # The platform owns the brand assets; this repository owns the rendered
 # pages and their publish-time snapshot. `-brand-only` stops genstatus from
@@ -69,5 +78,12 @@ lint: toolchain-check
 # passes PUBLISH_DECISION_FILE and branches on the `changed` output instead.
 publish-check:
 	python3 scripts/publish_check.py --root "$(STATUS_ROOT)" --base "$(PUBLISH_BASE)" $(if $(PUBLISH_DECISION_FILE),--decision-file "$(PUBLISH_DECISION_FILE)")
+
+# Verify the deployed origin against the committed build. This is a
+# post-publish step, not a commit gate: it needs the network and the live
+# site, and CI is billing-blocked, so run it locally after Pages deploys.
+verify-published:
+	@test -n "$(URL)" || { echo "verify-published: set URL=https://status.ia.sbktechno.com/" >&2; exit 2; }
+	python3 scripts/verify_published.py --root "$(STATUS_ROOT)" --url "$(URL)" $(if $(SIGNATURE),--signature "$(SIGNATURE)") $(if $(HMAC_KEY_FILE),--hmac-key-file "$(HMAC_KEY_FILE)") $(VERIFY_PUBLISHED_FLAGS)
 
 validate: $(GATE_TARGETS)
