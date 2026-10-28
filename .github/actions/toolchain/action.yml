@@ -8,16 +8,21 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: SBK-Techno/platform
-        ref: afc6a52909f77e603d2ad0ea400823b81899c823
+        ref: 1c42cb39eadea6553ad612c3496f5835b445a3b3
         path: .toolchain/platform
+        # SBK-Techno/platform is private. The repository secret holds a
+        # read-only deploy key; no credential lives in this checkout.
+        ssh-key: ${{ secrets.PLATFORM_READ_KEY }}
         persist-credentials: false
 
     - name: Check out the brand layer
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: SBK-Techno/brand
-        ref: 75a5d8b3a604379761fdf566c5146a8ade5f1399
+        ref: c0975b92b52a14c11003b2931fef7eca8b6a1d77
         path: .toolchain/brand
+        # SBK-Techno/brand is private too; the deploy key is read-only.
+        ssh-key: ${{ secrets.BRAND_READ_KEY }}
         persist-credentials: false
 
     - name: Set up Go
