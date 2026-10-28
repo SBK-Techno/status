@@ -212,10 +212,7 @@
     },
   };
 
-  const VITAL_KEYS = ["operational", "degraded", "outage", "maintenance", "unknown"];
-  const VITAL_GAP = 0.8;
-  const UNKNOWN_DASH = 1.2;
-  const UNKNOWN_GAP = 2;
+  const VITAL_KEYS = model.VITAL_KEYS;
 
   const state = {
     lang: readLang(),
@@ -309,11 +306,6 @@
       `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}` +
       ` · ${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())} UTC`
     );
-  }
-
-  function vitalKey(status) {
-    if (status === "partial_outage" || status === "major_outage") return "outage";
-    return status;
   }
 
   function setStamp(node, ms) {
@@ -459,61 +451,31 @@
     els.vitalsSignalValue.replaceChildren(value, "/", totalNode);
   }
 
-  function dashedArc(length) {
-    if (length <= 0) return "0 100";
-    if (length >= 99.999) return `${UNKNOWN_DASH} ${UNKNOWN_GAP}`;
-    const parts = [];
-    let remaining = length;
-    while (remaining > 0.001) {
-      const dash = Math.min(UNKNOWN_DASH, remaining);
-      parts.push(dash.toFixed(3).replace(/\.?0+$/, ""));
-      remaining -= dash;
-      if (remaining <= 0.001) break;
-      const gap = Math.min(UNKNOWN_GAP, remaining);
-      parts.push(gap.toFixed(3).replace(/\.?0+$/, ""));
-      remaining -= gap;
-    }
-    const tail = 100 - length;
-    if (tail > 0.001) parts.push(tail.toFixed(3).replace(/\.?0+$/, ""));
-    return parts.join(" ");
-  }
-
   function updateVitals(total, counts, signalMode) {
-    els.vitals.setAttribute("data-total", String(total));
-    setText(els.vitalsTotal, String(total));
-    setText(els.vitalsNumber, String(total));
+    const geometry = model.vitals(total, counts, signalMode);
+    els.vitals.setAttribute("data-total", String(geometry.total));
+    setText(els.vitalsTotal, String(geometry.total));
+    setText(els.vitalsNumber, String(geometry.total));
 
     if (els.vitalsScale) {
-      const gap = total > 0 ? `${VITAL_GAP} ${100 / total - VITAL_GAP}` : "0 100";
-      els.vitalsScale.setAttribute("stroke-dasharray", gap);
+      els.vitalsScale.setAttribute("stroke-dasharray", geometry.scaleGap);
     }
 
-    let offset = 0;
     for (const key of VITAL_KEYS) {
-      const count = counts[key] || 0;
-      const length = total > 0 ? (count / total) * 100 : 0;
       const segment = els.vitalSegments.get(key);
       if (segment) {
-        segment.setAttribute(
-          "stroke-dasharray",
-          key === "unknown" ? dashedArc(length) : `${length} 100`,
-        );
-        segment.setAttribute("stroke-dashoffset", String(-offset));
+        segment.setAttribute("stroke-dasharray", geometry.segments[key].dasharray);
+        segment.setAttribute("stroke-dashoffset", geometry.segments[key].dashoffset);
       }
       const label = els.vitalCounts.get(key);
-      if (label) label.textContent = String(count);
-      offset += length;
+      if (label) label.textContent = String(geometry.counts[key] || 0);
     }
 
-    const signals =
-      signalMode === "count" ? Math.max(0, total - (counts.unknown || 0)) : null;
-    const signalLength =
-      signals !== null && total > 0 ? (signals / total) * 100 : 0;
     if (els.vitalsSignal) {
-      els.vitalsSignal.setAttribute("stroke-dasharray", `${signalLength} 100`);
+      els.vitalsSignal.setAttribute("stroke-dasharray", `${geometry.signalLength} 100`);
       els.vitalsSignal.setAttribute("stroke-dashoffset", "0");
     }
-    setSignalValue(signals, total);
+    setSignalValue(geometry.signals, geometry.total);
   }
 
   function renderComponents(payload, current) {
@@ -531,7 +493,7 @@
     for (const component of payload.components) {
       if (!component || typeof component !== "object") continue;
       const status = forced ? "unknown" : model.normalizeStatus(component.status);
-      counts[vitalKey(status)] += 1;
+      counts[model.vitalKey(status)] += 1;
       rendered += 1;
 
       const item = document.createElement("li");

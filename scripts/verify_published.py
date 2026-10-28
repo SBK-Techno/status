@@ -19,10 +19,10 @@ signature. The published contract is:
   matches its recorded SHA-256, size, and media type. Fonts referenced by the
   brand stylesheet are checked the same way. Asset names come from the build
   output, never from a list in this module.
-* HTML is cacheable for at most 600 seconds with a validator, a conditional
-  request returns 304 with no body, content-hashed assets are immutable by
-  URL (and by header on a controllable edge), no response sets a cookie, and
-  a directory path is not a listing.
+* HTML revalidates within the limit declared by ``deploy/cache-policy.json``
+  with a validator, a conditional request returns 304 with no body,
+  content-hashed assets are immutable by URL (and by header on a controllable
+  edge), no response sets a cookie, and a directory path is not a listing.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from pathlib import Path
 
 import heartbeat_signature
 import site_build
+import site_cache
 import validate_status
 from status_snapshot import document_digest, parse_timestamp
 
@@ -56,8 +57,6 @@ LISTING_MAX_BYTES = 64 * 1024
 DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 DEFAULT_TIMEOUT = 10.0
 MAX_REDIRECTS = 3
-HTML_CACHE_MAX_AGE = 600
-IMMUTABLE_MIN_MAX_AGE = 31536000
 USER_AGENT = "sbk-status-verify/1"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 CONTENT_HASH_SEGMENT = re.compile(r"(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])")
@@ -134,6 +133,7 @@ class Plan:
     assets: dict[str, Asset]
     snapshot_at: str
     digest: str
+    cache_policy: site_cache.CachePolicy
 
 
 @dataclass(frozen=True)
@@ -376,7 +376,13 @@ def build_plan(root: Path) -> Plan:
         site_manifest = site_build.load_site_manifest(root)
         brand_manifest = site_build.load_brand_manifest(root)
         status_bytes = (root / "status.json").read_bytes()
-    except (site_build.BuildError, OSError, json.JSONDecodeError) as exc:
+        cache_policy = site_cache.load(root)
+    except (
+        site_build.BuildError,
+        site_cache.PolicyError,
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
         raise PlanError(str(exc)) from None
 
     site_assets = {entry["file"]: entry for entry in site_manifest["assets"].values()}
@@ -449,6 +455,7 @@ def build_plan(root: Path) -> Plan:
         assets=assets,
         snapshot_at=snapshot_at,
         digest=digest,
+        cache_policy=cache_policy,
     )
 
 
@@ -1031,6 +1038,8 @@ class Verifier:
         if not pages:
             self._skip("cache-html", "the live pages were not fetched")
             return
+        assert self.plan is not None
+        policy = self.plan.cache_policy
         failures: list[str] = []
         for name, response in pages.items():
             path = PAGE_PATHS[name]
@@ -1052,9 +1061,9 @@ class Verifier:
                 except ValueError:
                     failures.append(f"{path}: max-age is not an integer")
                 else:
-                    if age < 0 or age > HTML_CACHE_MAX_AGE:
+                    if age < 0 or age > policy.html_max_age:
                         failures.append(
-                            f"{path}: max-age {age} exceeds {HTML_CACHE_MAX_AGE}"
+                            f"{path}: max-age {age} exceeds {policy.html_max_age}"
                         )
             if not (response.header("etag") or response.header("last-modified")):
                 failures.append(f"{path}: no ETag or Last-Modified validator")
@@ -1063,7 +1072,7 @@ class Verifier:
         else:
             self._pass(
                 "cache-html",
-                f"max-age <= {HTML_CACHE_MAX_AGE} and a validator on both pages",
+                f"max-age <= {policy.html_max_age} and a validator on both pages",
             )
 
     def _conditional(self, pages: dict[str, Response]) -> None:
@@ -1115,6 +1124,7 @@ class Verifier:
         if self.plan is None:
             self._skip("cache-assets", "the local build is unavailable")
             return
+        policy = self.plan.cache_policy
         github_pages = self.host_policy == "github-pages" or (
             self.host_policy == "auto"
             and any(self._is_github_pages(response) for response in self.fetched)
@@ -1151,22 +1161,22 @@ class Verifier:
                     failures.append(f"{asset.path}: max-age is not an integer")
                     continue
             if "immutable" in directives:
-                if age is None or age < IMMUTABLE_MIN_MAX_AGE:
+                if age is None or age < policy.immutable_min_max_age:
                     failures.append(
                         f"{asset.path}: immutable requires max-age >= "
-                        f"{IMMUTABLE_MIN_MAX_AGE}"
+                        f"{policy.immutable_min_max_age}"
                     )
                 continue
             if github_pages:
-                if age is None or age < 0 or age > HTML_CACHE_MAX_AGE:
+                if age is None or age < 0 or age > policy.html_max_age:
                     failures.append(
                         f"{asset.path}: GitHub Pages max-age must be between "
-                        f"0 and {HTML_CACHE_MAX_AGE}"
+                        f"0 and {policy.html_max_age}"
                     )
                 continue
             failures.append(
                 f"{asset.path}: expected immutable with max-age >= "
-                f"{IMMUTABLE_MIN_MAX_AGE} on this origin"
+                f"{policy.immutable_min_max_age} on this origin"
             )
         if failures:
             self._fail("cache-assets", "; ".join(failures[:5]))
@@ -1174,13 +1184,13 @@ class Verifier:
             self._pass(
                 "cache-assets",
                 f"{len(self.plan.assets)} content-hashed URLs; GitHub Pages "
-                f"caps max-age at {HTML_CACHE_MAX_AGE} (immutable header unavailable)",
+                f"caps max-age at {policy.html_max_age} (immutable header unavailable)",
             )
         else:
             self._pass(
                 "cache-assets",
                 f"{len(self.plan.assets)} content-hashed assets are immutable "
-                f"for at least {IMMUTABLE_MIN_MAX_AGE} seconds",
+                f"for at least {policy.immutable_min_max_age} seconds",
             )
 
     @staticmethod

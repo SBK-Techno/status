@@ -94,6 +94,83 @@ STALE_TEXT_FR = {
     "aged": "L'état général et les composantes restent inconnus.",
 }
 
+VITAL_KEYS = ("operational", "degraded", "outage", "maintenance", "unknown")
+VITAL_GAP = 0.8
+UNKNOWN_DASH = 1.2
+UNKNOWN_GAP = 2
+
+
+def vital_key(status: object) -> str:
+    """Collapse the five board statuses onto the four vital segments."""
+    if status in ("partial_outage", "major_outage"):
+        return "outage"
+    return status if status in VITAL_KEYS else "unknown"
+
+
+def _number(value: float) -> str:
+    """Match the browser's toFixed(3) with trailing zeros removed."""
+    return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
+def dashed_arc(length: float) -> str:
+    """Mirror app.js: a dashed arc for the unknown segment."""
+    if length <= 0:
+        return "0 100"
+    if length >= 99.999:
+        return f"{_number(UNKNOWN_DASH)} {_number(UNKNOWN_GAP)}"
+    parts: list[str] = []
+    remaining = length
+    while remaining > 0.001:
+        dash = min(UNKNOWN_DASH, remaining)
+        parts.append(_number(dash))
+        remaining -= dash
+        if remaining <= 0.001:
+            break
+        gap = min(UNKNOWN_GAP, remaining)
+        parts.append(_number(gap))
+        remaining -= gap
+    tail = 100 - length
+    if tail > 0.001:
+        parts.append(_number(tail))
+    return " ".join(parts)
+
+
+def vitals_state(components: list[dict], fresh: bool) -> dict:
+    """Return the publish-time values the vitals instrument must show.
+
+    The server renders the same counts and arcs that app.js will render after
+    the first read, so the instrument does not appear or resize later.
+    """
+    counts = {key: 0 for key in VITAL_KEYS}
+    for component in components:
+        counts[vital_key(component["status"])] += 1
+    total = len(components)
+    segments: dict[str, dict[str, str]] = {}
+    offset = 0.0
+    for key in VITAL_KEYS:
+        length = (counts[key] / total) * 100 if total else 0.0
+        dasharray = dashed_arc(length) if key == "unknown" else f"{_number(length)} 100"
+        segments[key] = {
+            "dasharray": dasharray,
+            "dashoffset": _number(-offset) if offset else "0",
+        }
+        offset += length
+    signals = total - counts["unknown"] if fresh else None
+    signal_length = (signals / total) * 100 if signals is not None and total else 0.0
+    scale_gap = (
+        f"{_number(VITAL_GAP)} {_number(100 / total - VITAL_GAP)}"
+        if total
+        else "0 100"
+    )
+    return {
+        "total": total,
+        "counts": counts,
+        "signals": signals,
+        "signal_length": signal_length,
+        "scale_gap": scale_gap,
+        "segments": segments,
+    }
+
 
 def parse_timestamp(value: object) -> datetime | None:
     if not isinstance(value, str) or not TIMESTAMP_PATTERN.fullmatch(value):
@@ -239,6 +316,7 @@ def snapshot_state(document: dict, now: datetime) -> dict:
             "title": STALE_TITLE_FR[reason],
             "text": STALE_TEXT_FR[reason],
         },
+        "vitals": vitals_state(components, fresh),
         "components": components,
         "incidents": incidents,
         "component_count_text": (
@@ -290,6 +368,67 @@ def _incident_row(incident: dict) -> str:
             <div class="incident-meta"><span><span class="micro">Mis à jour</span>{_time_or_missing(incident["updated_at"])}</span></div>
           </div>
         </li>"""
+
+
+def _vitals_markup(vitals: dict) -> str:
+    """Render the instrument from the same values app.js will render.
+
+    The markup is never hidden: it is part of the static snapshot and its
+    height must be reserved before status.json is read.
+    """
+    segments = []
+    for key in VITAL_KEYS:
+        segment = vitals["segments"][key]
+        segments.append(
+            f'              <circle class="vitals__segment" data-vital="{key}" '
+            'cx="110" cy="110" r="90" pathLength="100" '
+            f'stroke-dasharray="{segment["dasharray"]}" '
+            f'stroke-dashoffset="{segment["dashoffset"]}" '
+            'transform="rotate(-90 110 110)"></circle>'
+        )
+    counts = "\n".join(
+        f'            <li data-vital="{key}"><span class="vitals__key" aria-hidden="true"></span>'
+        f'<span data-i18n="{label}">{text}</span>'
+        f'<span class="vitals__count" data-count="{key}">{vitals["counts"][key]}</span></li>'
+        for key, label, text in (
+            ("operational", "vitalOperational", "Opérationnelles"),
+            ("degraded", "vitalDegraded", "Dégradées"),
+            ("outage", "vitalOutage", "Interrompues"),
+            ("maintenance", "vitalMaintenance", "Maintenance"),
+            ("unknown", "vitalUnknown", "Inconnues"),
+        )
+    )
+    if vitals["signals"] is None:
+        signal = '<span data-i18n="unknown">Inconnu</span>'
+    else:
+        signal = (
+            f'<span id="vitals-signals">{vitals["signals"]}</span>/'
+            f'<span id="vitals-signal-total">{vitals["total"]}</span>'
+        )
+    return f"""        <div class="vitals" id="vitals" aria-hidden="true" data-total="{vitals["total"]}">
+          <div class="vitals__head">
+            <p class="vitals__title">Vitals <span aria-hidden="true">/</span> <span data-i18n="componentsTitle">Composantes</span></p>
+            <p class="vitals__total"><span id="vitals-total">{vitals["total"]}</span></p>
+          </div>
+          <div class="vitals__dial">
+            <svg class="vitals__svg" viewBox="0 0 220 220" role="presentation" focusable="false">
+              <circle class="vitals__ticks" cx="110" cy="110" r="100" pathLength="100" stroke-dasharray="0.25 1.75"></circle>
+              <circle class="vitals__track" cx="110" cy="110" r="90"></circle>
+{chr(10).join(segments)}
+              <circle class="vitals__scale" id="vitals-scale" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="{vitals["scale_gap"]}" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
+              <circle class="vitals__signal-track" cx="110" cy="110" r="64"></circle>
+              <circle class="vitals__signal" id="vitals-signal" cx="110" cy="110" r="64" pathLength="100" stroke-dasharray="{_number(vitals["signal_length"])} 100" transform="rotate(-90 110 110)"></circle>
+            </svg>
+            <div class="vitals__readout">
+              <span class="vitals__number" id="vitals-number">{vitals["total"]}</span>
+              <span class="vitals__unit" data-i18n="vitalsComponents">composantes</span>
+            </div>
+          </div>
+          <ul class="vitals__legend">
+{counts}
+          </ul>
+          <p class="vitals__signal-line"><span data-i18n="vitalSignals">Signaux reçus</span> <span class="vitals__signal-value">{signal}</span></p>
+        </div>"""
 
 
 def render_snapshot_region(document: dict, now: datetime) -> str:
@@ -363,38 +502,7 @@ def render_snapshot_region(document: dict, now: datetime) -> str:
           </p>
         </div>
 
-        <div class="vitals" id="vitals" aria-hidden="true" data-total="0" hidden>
-          <div class="vitals__head">
-            <p class="vitals__title">Vitals <span aria-hidden="true">/</span> <span data-i18n="componentsTitle">Composantes</span></p>
-            <p class="vitals__total"><span id="vitals-total">0</span></p>
-          </div>
-          <div class="vitals__dial">
-            <svg class="vitals__svg" viewBox="0 0 220 220" role="presentation" focusable="false">
-              <circle class="vitals__ticks" cx="110" cy="110" r="100" pathLength="100" stroke-dasharray="0.25 1.75"></circle>
-              <circle class="vitals__track" cx="110" cy="110" r="90"></circle>
-              <circle class="vitals__segment" data-vital="operational" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
-              <circle class="vitals__segment" data-vital="degraded" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
-              <circle class="vitals__segment" data-vital="outage" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
-              <circle class="vitals__segment" data-vital="maintenance" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
-              <circle class="vitals__segment" data-vital="unknown" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
-              <circle class="vitals__scale" id="vitals-scale" cx="110" cy="110" r="90" pathLength="100" stroke-dasharray="0.8 19.2" stroke-dashoffset="0" transform="rotate(-90 110 110)"></circle>
-              <circle class="vitals__signal-track" cx="110" cy="110" r="64"></circle>
-              <circle class="vitals__signal" id="vitals-signal" cx="110" cy="110" r="64" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 110 110)"></circle>
-            </svg>
-            <div class="vitals__readout">
-              <span class="vitals__number" id="vitals-number">0</span>
-              <span class="vitals__unit" data-i18n="vitalsComponents">composantes</span>
-            </div>
-          </div>
-          <ul class="vitals__legend">
-            <li data-vital="operational"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalOperational">Opérationnelles</span><span class="vitals__count" data-count="operational">0</span></li>
-            <li data-vital="degraded"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalDegraded">Dégradées</span><span class="vitals__count" data-count="degraded">0</span></li>
-            <li data-vital="outage"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalOutage">Interrompues</span><span class="vitals__count" data-count="outage">0</span></li>
-            <li data-vital="maintenance"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalMaintenance">Maintenance</span><span class="vitals__count" data-count="maintenance">0</span></li>
-            <li data-vital="unknown"><span class="vitals__key" aria-hidden="true"></span><span data-i18n="vitalUnknown">Inconnues</span><span class="vitals__count" data-count="unknown">0</span></li>
-          </ul>
-          <p class="vitals__signal-line"><span data-i18n="vitalSignals">Signaux reçus</span> <span class="vitals__signal-value"><span id="vitals-signals">0</span>/<span id="vitals-signal-total">0</span></span></p>
-        </div>
+{_vitals_markup(state["vitals"])}
 
         <div class="hero__foot">
           <p class="hero__signal"><span class="micro" data-i18n="heroSignal">Dernier signal :</span> <span id="hero-signal">{signal_html}</span></p>

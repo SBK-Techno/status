@@ -552,6 +552,92 @@ def ordered_rows(node: Element | None, tag: str = "li") -> list[Element]:
     ]
 
 
+VITAL_KEYS = ("operational", "degraded", "outage", "maintenance", "unknown")
+
+
+def vital_key(status: str) -> str:
+    if status in ("partial_outage", "major_outage"):
+        return "outage"
+    return status if status in VITAL_KEYS else "unknown"
+
+
+def validate_vitals(name: str, vitals: Element, expected: dict) -> list[str]:
+    """The static instrument must be visible and carry the snapshot values.
+
+    It is no longer a JavaScript-only placeholder: hiding it until the first
+    read was what moved the hero and the board after status.json arrived.
+    """
+    errors: list[str] = []
+    if "hidden" in vitals.attrs:
+        errors.append(
+            f"{name}: #vitals must stay visible; its publish-time values are "
+            "part of the static snapshot"
+        )
+    total = vitals.attrs.get("data-total", "").strip()
+    if total != str(expected["total"]):
+        errors.append(
+            f"{name}: #vitals data-total must be {expected['total']!r}"
+        )
+    counts = {
+        node.attrs.get("data-count", ""): element_text(node)
+        for node in vitals.find_all("span", class_name="vitals__count")
+    }
+    for key in VITAL_KEYS:
+        if counts.get(key) != str(expected["counts"][key]):
+            errors.append(
+                f"{name}: #vitals count for {key!r} must be "
+                f"{expected['counts'][key]!r}"
+            )
+    if "segments" in expected:
+        segments = {
+            node.attrs.get("data-vital", ""): node
+            for node in vitals.find_all("circle", class_name="vitals__segment")
+        }
+        for key in VITAL_KEYS:
+            segment = segments.get(key)
+            if segment is None:
+                errors.append(f"{name}: #vitals is missing the {key!r} segment")
+                continue
+            want = expected["segments"][key]
+            if segment.attrs.get("stroke-dasharray") != want["dasharray"]:
+                errors.append(
+                    f"{name}: #vitals {key!r} segment dash array must be "
+                    f"{want['dasharray']!r}"
+                )
+            if segment.attrs.get("stroke-dashoffset") != want["dashoffset"]:
+                errors.append(
+                    f"{name}: #vitals {key!r} segment dash offset must be "
+                    f"{want['dashoffset']!r}"
+                )
+    if "signals" in expected:
+        signal_value = next(
+            vitals.find_all("span", class_name="vitals__signal-value"), None
+        )
+        if expected["signals"] is None:
+            if element_text(signal_value) != "Inconnu":
+                errors.append(
+                    f"{name}: #vitals must report the signal count as unknown"
+                )
+        else:
+            signals = next(
+                vitals.find_all("span", element_id="vitals-signals"), None
+            )
+            total_node = next(
+                vitals.find_all("span", element_id="vitals-signal-total"), None
+            )
+            if element_text(signals) != str(expected["signals"]):
+                errors.append(
+                    f"{name}: #vitals signal count must be "
+                    f"{expected['signals']!r}"
+                )
+            if element_text(total_node) != str(expected["total"]):
+                errors.append(
+                    f"{name}: #vitals signal total must be "
+                    f"{expected['total']!r}"
+                )
+    return errors
+
+
 def validate_snapshot(
     name: str,
     text: str,
@@ -744,10 +830,13 @@ def validate_snapshot(
     vitals = next(page.find_all(element_id="vitals"), None)
     if vitals is None:
         errors.append(f"{name}: missing #vitals")
-    elif "hidden" not in vitals.attrs or vitals.attrs.get("data-total") != "0":
-        errors.append(
-            f"{name}: #vitals must stay hidden with data-total='0' until "
-            "JavaScript has rendered a payload"
+    else:
+        errors.extend(
+            validate_vitals(
+                name,
+                vitals,
+                expected["vitals"],
+            )
         )
 
     incidents = next(page.find_all("ol", element_id="incidents-list"), None)
@@ -1231,16 +1320,21 @@ def validate_page(
             total = vitals.attrs.get("data-total", "").strip()
             if not total.isdigit():
                 errors.append(f"{name}: #vitals must declare a numeric data-total")
-            elif "hidden" not in vitals.attrs or int(total) != 0:
-                errors.append(
-                    f"{name}: #vitals must stay hidden with data-total='0' "
-                    "until JavaScript has rendered a payload"
+            counts = {key: 0 for key in VITAL_KEYS}
+            for row in rows:
+                counts[vital_key(row.attrs.get("data-status", ""))] += 1
+            errors.extend(
+                validate_vitals(
+                    name,
+                    vitals,
+                    {"total": len(rows), "counts": counts},
                 )
+            )
             segments = {
                 node.attrs.get("data-vital", "")
                 for node in vitals.find_all("circle", class_name="vitals__segment")
             }
-            expected_segments = {"operational", "degraded", "outage", "maintenance", "unknown"}
+            expected_segments = set(VITAL_KEYS)
             if segments != expected_segments:
                 errors.append(
                     f"{name}: #vitals must declare all five status segments; "

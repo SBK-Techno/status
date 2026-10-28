@@ -26,9 +26,62 @@
     "unknown",
   ];
   const STATUS_SET = new Set(STATUSES);
+  const VITAL_KEYS = ["operational", "degraded", "outage", "maintenance", "unknown"];
+  const VITAL_GAP = 0.8;
+  const UNKNOWN_DASH = 1.2;
+  const UNKNOWN_GAP = 2;
 
   function normalizeStatus(value) {
     return STATUS_SET.has(value) ? value : "unknown";
+  }
+
+  function vitalKey(status) {
+    if (status === "partial_outage" || status === "major_outage") return "outage";
+    return VITAL_KEYS.includes(status) ? status : "unknown";
+  }
+
+  function dashedArc(length) {
+    if (length <= 0) return "0 100";
+    if (length >= 99.999) return `${UNKNOWN_DASH} ${UNKNOWN_GAP}`;
+    const parts = [];
+    let remaining = length;
+    while (remaining > 0.001) {
+      const dash = Math.min(UNKNOWN_DASH, remaining);
+      parts.push(dash.toFixed(3).replace(/\.?0+$/, ""));
+      remaining -= dash;
+      if (remaining <= 0.001) break;
+      const gap = Math.min(UNKNOWN_GAP, remaining);
+      parts.push(gap.toFixed(3).replace(/\.?0+$/, ""));
+      remaining -= gap;
+    }
+    const tail = 100 - length;
+    if (tail > 0.001) parts.push(tail.toFixed(3).replace(/\.?0+$/, ""));
+    return parts.join(" ");
+  }
+
+  function vitals(total, counts, signalMode) {
+    const segments = {};
+    let offset = 0;
+    for (const key of VITAL_KEYS) {
+      const count = counts[key] || 0;
+      const length = total > 0 ? (count / total) * 100 : 0;
+      segments[key] = {
+        dasharray: key === "unknown" ? dashedArc(length) : `${length} 100`,
+        dashoffset: String(-offset),
+      };
+      offset += length;
+    }
+    const signals =
+      signalMode === "count" ? Math.max(0, total - (counts.unknown || 0)) : null;
+    const signalLength = signals !== null && total > 0 ? (signals / total) * 100 : 0;
+    return {
+      total,
+      counts,
+      signals,
+      signalLength,
+      scaleGap: total > 0 ? `${VITAL_GAP} ${100 / total - VITAL_GAP}` : "0 100",
+      segments,
+    };
   }
 
   function parseTimestamp(value) {
@@ -205,8 +258,12 @@
     MAX_AGE_MS,
     FUTURE_SKEW_MS,
     STATUSES,
+    VITAL_KEYS,
     parseTimestamp,
     normalizeStatus,
+    vitalKey,
+    dashedArc,
+    vitals,
     freshness,
     presentation,
   };

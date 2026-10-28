@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "html": "public, max-age=600, must-revalidate",
+  "status": "no-store",
+  "hashed": "public, max-age=31536000, immutable",
+  "hashedPattern": "\\.[0-9a-f]{12,64}\\.[a-z0-9]+$"
+}

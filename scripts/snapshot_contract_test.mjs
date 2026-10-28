@@ -24,6 +24,24 @@ const results = fixtures.fixtures.map((fixture) => {
     false,
     Date.parse(fixture.now),
   );
+  const components = Array.isArray(fixture.document.components)
+    ? fixture.document.components.filter(
+        (component) => component && typeof component === "object",
+      )
+    : [];
+  const counts = {
+    operational: 0,
+    degraded: 0,
+    outage: 0,
+    maintenance: 0,
+    unknown: 0,
+  };
+  for (const component of components) {
+    const status = current.forceUnknown
+      ? "unknown"
+      : model.normalizeStatus(component.status);
+    counts[model.vitalKey(status)] += 1;
+  }
   return {
     name: fixture.name,
     mode: current.mode,
@@ -37,9 +55,8 @@ const results = fixtures.fixtures.map((fixture) => {
     confirmed: current.confirmed,
     forceUnknown: current.forceUnknown,
     generated: current.generated,
-    components: Array.isArray(fixture.document.components)
-      ? fixture.document.components.length
-      : 0,
+    components: components.length,
+    vitals: model.vitals(components.length, counts, current.signal),
   };
 });
 
