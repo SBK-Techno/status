@@ -37,7 +37,7 @@ Lifting the exemption requires the brand layer to publish a dark-surface variant
 - `scripts/build_site.py` resolves the site placeholders to content-hashed names, writes `site.manifest.json`, generates the print palette from the brand light tokens, and renders the snapshot from the exact `status.json` bytes.
 - `scripts/prune_assets.py` records newly retired generated files in `asset-retention.json` and deletes files whose seven-day retention window has expired. `make brand-check` fails when an unmanifested file has no record or its window is overdue.
 
-Never edit the root `index.html`, `404.html`, `styles.css` hashed copies, `site.manifest.json`, `asset-retention.json`, the hashed brand assets, or `brand.manifest.json` by hand. Change the template, the site source, the document, or the brand repository and run `make brand`. `make brand-check` verifies the committed output without writing. Use `make brand BRAND=/path/to/sbk-brand` to read another brand checkout.
+Never edit the root `index.html`, `404.html`, `styles.css` hashed copies, `site.manifest.json`, `asset-retention.json`, the hashed brand assets, or `brand.manifest.json` by hand. Change the template, the site source, the document, or the brand repository and run `make brand`. `make brand-check` verifies the committed output without writing. Both targets read `.toolchain/platform` and `.toolchain/brand` by default; pass `PLATFORM=` and `BRAND=` to use other checkouts.
 
 The page links exactly one `brand.<hash>.css`. `scripts/validate_status.py` requires that link, proves its filename is the `brand.css` entry in `brand.manifest.json`, and recomputes the file's SHA-256 and byte size. A second brand link, a link to an older sheet, or a hand-edited digest fails. An unmanifested file is allowed only inside the seven-day retirement window; after that the same gate fails until `make brand` prunes it.
 
@@ -90,7 +90,7 @@ The future edge should set `Cache-Control: public, max-age=600, must-revalidate`
 
 ## Heartbeat
 
-The platform `cmd/statuspublisher` probes the public surfaces, writes `status.json` atomically, signs the exact bytes with HMAC-SHA256, and dispatches `.github/workflows/publish.yml`. The workflow verifies the signature with the `STATUS_HEARTBEAT_HMAC` repository secret, validates the document with `scripts/validate_status.py`, writes `status.json`, runs `scripts/build_site.py --write` to render the snapshot from those exact bytes, validates the written site, and pushes `status.json`, `index.html`, `site.manifest.json`, and any changed generated assets; Pages then deploys the branch. The publisher is implemented, but the host timer and credentials must be installed before the page leaves its stale seed.
+The platform `cmd/statuspublisher` probes the public surfaces, writes `status.json` atomically, signs the exact bytes with HMAC-SHA256, and dispatches `.github/workflows/publish.yml`. The workflow verifies the signature with the `STATUS_HEARTBEAT_HMAC` repository secret and writes those exact bytes to `status.json`. It then runs `make brand` to render the snapshot from the new document and to prune assets whose retention window expired, runs the same `make validate` gate as CI, and only then commits and pushes `status.json`, `index.html`, `site.manifest.json`, `asset-retention.json`, and any changed generated assets; Pages then deploys the branch. The publisher is implemented, but the host timer and credentials must be installed before the page leaves its stale seed.
 
 The host reads the key from `/run/secrets/status-heartbeat-hmac` and a fine-grained GitHub token with Actions write access on this repository from `/run/secrets/status-dispatch-token`. The HMAC value must equal the repository secret. Never commit either value.
 
@@ -190,16 +190,25 @@ Run the local checks with:
 make validate
 ```
 
-`make validate` includes `make brand-check`, so it needs the sibling platform and brand checkouts (or `PLATFORM=` and `BRAND=` overrides).
+`make validate` needs the platform and brand checkouts. By default it reads `.toolchain/platform` and `.toolchain/brand`; that directory is Git-ignored, so a local checkout never becomes part of the site. Create the links once:
+
+```sh
+mkdir -p .toolchain
+ln -s /path/to/platform .toolchain/platform
+ln -s /path/to/brand .toolchain/brand
+```
+
+Alternatively pass `make validate PLATFORM=/path/to/platform BRAND=/path/to/brand`. CI pins both revisions in `.github/actions/toolchain/action.yml`; use the same revisions locally when reproducing a CI result. A missing checkout fails with the exact path and the override to set.
+
+`make validate` expands `GATE_TARGETS` from the Makefile: the document and site validator, the unit suites, `brand-check` (generator check), `render-check` (rendered-site reproduction), `assets-check` (retention ledger), the platform `statuscheck` against `status.json`, and `brandlint`. The workflow checks out this repository, invokes the pinned toolchain action, and runs that one target; it keeps no second list of checks.
 
 ## Validation
 
-`.github/workflows/validate.yml` runs on every push to `main`, on pull requests, and on manual dispatch. It pins `actions/checkout` to a full commit SHA and uses the runner's Python 3.
-
-The workflow checks out the public platform and brand repositories, sets up the Go toolchain from the platform's `go.mod`, and runs:
+`.github/workflows/validate.yml` runs on every push to `main`, on pull requests, and on manual dispatch. It is read-only, cancels superseded pull-request runs, and uses the runner's Python 3. A local composite action (`.github/actions/toolchain`) checks out the public platform and brand repositories at full commit SHAs with `persist-credentials: false`, then sets up Go from the pinned platform's `go.mod`. The workflow then runs `make validate`, which expands the same `GATE_TARGETS` list used locally:
 
 - `cmd/genstatus -check` through `scripts/check_generated.py`. The script reverses only the site layer in a temporary checkout, then lets the platform generator compare the brand-resolved markup, `brand.manifest.json`, and every published brand asset. `scripts/build_site.py --check` separately reproduces the final page byte for byte.
 - `cmd/brandlint` against the platform, brand, and status checkouts. It rejects raw colours, literal font stacks, external stylesheet imports, missing shell markers, unresolved placeholders, digest or size drift, and a published asset that a page does not reference.
+- `cmd/statuscheck` loads the committed `status.json` through the platform's public status package and rejects a document that does not match the schema.
 - The published brand assets match the SHA-256 digests and byte sizes in `brand.manifest.json`; exactly one `brand.<hash>.css` is linked, it is the manifest entry, and its digest matches. A second or older brand sheet fails.
 - `index.html` and `404.html` share one CSP from `templates/csp.txt`; neither carries `frame-ancestors` in a meta policy.
 - The static snapshot is re-rendered from the exact `status.json` bytes and compared with the committed HTML: digest, snapshot instant, headline, summary, stale notice, component rows, incident rows, counts, and times. A stale document may not show confirmed rows or repeat the publisher summary.
@@ -212,9 +221,9 @@ The workflow checks out the public platform and brand repositories, sets up the 
 - `CNAME` is exactly `status.ia.sbktechno.com` with a final newline.
 - `index.html`, `styles.css`, `app.js`, and `status-model.js` exist and are non-empty.
 
-`make validate` runs the document/site validator, the unit tests, and `make brand-check`. The Python suite runs `scripts/status_model_test.mjs` and `scripts/snapshot_contract_test.mjs` through Node, so the live browser model and the publish-time Python snapshot agree on loading, fresh, stale, null, future, aged, expired, and failed-fetch states.
+`make validate` runs the document/site validator, the unit tests, `make brand-check`, `make render-check`, the retention check, the platform `statuscheck`, and `cmd/brandlint`. `scripts/ci_contract_test.py` parses the Makefile and both workflows: it fails if `make validate` stops expanding `GATE_TARGETS`, if a workflow grows an inline check, if the toolchain refs stop being full 40-hex commit SHAs, or if publish stops pruning and validating before its commit. The Python suite runs `scripts/status_model_test.mjs` and `scripts/snapshot_contract_test.mjs` through Node, so the live browser model and the publish-time Python snapshot agree on loading, fresh, stale, null, future, aged, expired, and failed-fetch states.
 
-No third-party action is used beyond `actions/checkout` and `actions/setup-go`.
+No third-party action is used beyond `actions/checkout` and `actions/setup-go`; the local composite action pins both.
 
 ## Security and privacy
 

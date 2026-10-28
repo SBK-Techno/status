@@ -22,10 +22,16 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      # Unlike the validation job, this checkout must retain credentials: the
+      # final step pushes the commit. The toolchain checkouts below are
+      # read-only and drop them.
       - name: Checkout status
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the pinned status toolchain
+        uses: ./.github/actions/toolchain
 
       - name: Verify the signed payload
         env:
@@ -37,13 +43,9 @@ jobs:
           import base64
           import hashlib
           import hmac
-          import json
           import os
           import sys
           from pathlib import Path
-
-          sys.path.insert(0, "scripts")
-          from validate_status import validate_document
 
           key = os.environ.get("STATUS_HEARTBEAT_HMAC", "")
           if not key:
@@ -59,23 +61,18 @@ jobs:
               sys.exit("signature mismatch")
           if not payload.endswith(b"\n"):
               sys.exit("payload must end with a newline")
-          try:
-              document = json.loads(payload)
-          except json.JSONDecodeError as exc:
-              sys.exit(f"payload is not JSON: {exc}")
-          errors = validate_document(document)
-          if errors:
-              for error in errors:
-                  print(f"  - {error}", file=sys.stderr)
-              sys.exit("payload does not match the status contract")
           Path("status.json").write_bytes(payload)
           PY
 
-      - name: Render the publish-time snapshot
-        run: python3 scripts/build_site.py --root . --write
+      # The generator, renderer, and retention writer are the same commands a
+      # developer runs. Pruning runs before the commit so an expired asset can
+      # never be published by a heartbeat.
+      - name: Rebuild the generated site and prune retired assets
+        run: make brand
 
-      - name: Validate the written site
-        run: python3 scripts/validate_status.py
+      # This is the exact CI gate: the Makefile owns the check list.
+      - name: Run the same validation gate as CI
+        run: make validate
 
       - name: Commit the heartbeat
         run: |

@@ -1,0 +1,29 @@
+name: Status toolchain
+description: Check out the pinned platform and brand inputs and install Go.
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the platform toolchain
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: SBK-Techno/platform
+        ref: afc6a52909f77e603d2ad0ea400823b81899c823
+        path: .toolchain/platform
+        persist-credentials: false
+
+    - name: Check out the brand layer
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: SBK-Techno/brand
+        ref: 75a5d8b3a604379761fdf566c5146a8ade5f1399
+        path: .toolchain/brand
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: .toolchain/platform/go.mod
+        check-latest: false
+        cache: true
+        cache-dependency-path: .toolchain/platform/go.sum

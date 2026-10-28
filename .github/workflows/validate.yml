@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: status-validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     name: Validate the static status site
@@ -20,34 +24,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # The brand generator and linter are the platform's source of truth for
-      # the shared shell. They are read-only inputs, not a second copy of the
-      # brand contract in this repository.
-      - name: Check out the platform toolchain
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: SBK-Techno/platform
-          path: .toolchain/platform
-          persist-credentials: false
+      # The generator, linter, and status checker are the platform's source of
+      # truth. They are read-only inputs, not a second copy of the status or
+      # brand contract in this repository. The composite action records the
+      # exact platform and brand commits so local and CI builds agree.
+      - name: Set up the pinned status toolchain
+        uses: ./.github/actions/toolchain
 
-      - name: Check out the brand layer
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: SBK-Techno/brand
-          path: .toolchain/brand
-          persist-credentials: false
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: .toolchain/platform/go.mod
-          check-latest: false
-          cache: true
-          cache-dependency-path: .toolchain/platform/go.sum
-
-      - name: Validate the document, snapshot, brand link, and print block
-        run: make validate PLATFORM=.toolchain/platform BRAND=.toolchain/brand
-
-      - name: Lint the brand surface
-        working-directory: .toolchain/platform
-        run: go run ./cmd/brandlint -root . -brand ../brand -status ../..
+      - name: Run the local validation gate
+        run: make validate
