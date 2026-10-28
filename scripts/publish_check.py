@@ -3,8 +3,8 @@
 
 Run after ``make brand``. The comparison base is the published commit (``HEAD``
 by default) and the publish surface is every file a publish may write: the
-document, the rendered pages, both generated manifests, the retention ledger,
-and the content-hashed brand and site assets.
+document, the rendered pages, both generated manifests, the generated edge
+config, the retention ledger, and the content-hashed brand and site assets.
 
 Exit codes:
 
@@ -55,6 +55,7 @@ INDEX_FILES = (
     "404.html",
     site_build.SITE_MANIFEST,
     "brand.manifest.json",
+    "deploy/Caddyfile",
     prune_assets.LEDGER,
 )
 GIT_TIMEOUT = 60

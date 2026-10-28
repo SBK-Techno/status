@@ -25,9 +25,9 @@ BRAND_DIR := $(abspath $(BRAND))
 # workflow keeps a second list of checks. scripts/ci_contract_test.py proves
 # that the workflow still delegates here and that the pinned toolchain refs
 # stay full commit SHAs.
-GATE_TARGETS := status-check test contract brand-check render-check assets-check statuscheck governance-check actionlint hook hook-check lint
+GATE_TARGETS := status-check test contract brand-check render-check edge-check assets-check statuscheck governance-check actionlint hook hook-check lint
 
-.PHONY: $(GATE_TARGETS) hooks brand prune publish-check toolchain-check validate verify-published
+.PHONY: $(GATE_TARGETS) hooks brand prune publish-check toolchain-check validate verify-published edge cls-check
 
 # The platform owns the brand assets; this repository owns the rendered
 # pages and their publish-time snapshot. `-brand-only` stops genstatus from
@@ -37,6 +37,7 @@ GATE_TARGETS := status-check test contract brand-check render-check assets-check
 brand: toolchain-check
 	cd "$(PLATFORM_DIR)" && $(GO) run ./cmd/genstatus -root "$(STATUS_ROOT)" -brand "$(BRAND_DIR)" -brand-only
 	$(MAKE) --no-print-directory render
+	$(MAKE) --no-print-directory edge
 	$(MAKE) --no-print-directory prune
 
 toolchain-check:
@@ -96,6 +97,19 @@ render:
 
 render-check:
 	python3 scripts/build_site.py --root "$(STATUS_ROOT)" --check
+
+# The cache policy is owned by deploy/cache-policy.json. The edge config is
+# generated from it, and the browser check serves the same declarations.
+edge:
+	python3 scripts/render_edge_config.py --root "$(STATUS_ROOT)" --write
+
+edge-check:
+	python3 scripts/render_edge_config.py --root "$(STATUS_ROOT)" --check
+
+# Local browser gate, not part of `make validate`: it needs Playwright and a
+# Chromium download, which CI deliberately does not install.
+cls-check:
+	python3 scripts/cls_check.py --root "$(STATUS_ROOT)"
 
 prune:
 	python3 scripts/prune_assets.py --root "$(STATUS_ROOT)" --write

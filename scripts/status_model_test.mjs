@@ -309,4 +309,46 @@ assert.deepEqual(model.STATUSES, [
 assert.equal(model.normalizeStatus("operational"), "operational");
 assert.equal(model.normalizeStatus("green"), "unknown");
 
+assert.deepEqual(model.VITAL_KEYS, [
+  "operational",
+  "degraded",
+  "outage",
+  "maintenance",
+  "unknown",
+]);
+assert.equal(model.vitalKey("partial_outage"), "outage");
+assert.equal(model.vitalKey("major_outage"), "outage");
+assert.equal(model.vitalKey("green"), "unknown");
+assert.equal(model.dashedArc(0), "0 100");
+assert.equal(model.dashedArc(100), "1.2 2");
+
+{
+  const geometry = model.vitals(
+    5,
+    { operational: 2, degraded: 1, outage: 0, maintenance: 0, unknown: 2 },
+    "count",
+  );
+  assert.equal(geometry.total, 5);
+  assert.equal(geometry.signals, 3);
+  assert.equal(geometry.signalLength, 60);
+  assert.equal(geometry.scaleGap, "0.8 19.2");
+  assert.equal(geometry.segments.operational.dasharray, "40 100");
+  assert.equal(geometry.segments.operational.dashoffset, "0");
+  assert.equal(geometry.segments.degraded.dasharray, "20 100");
+  assert.equal(geometry.segments.degraded.dashoffset, "-40");
+  assert.ok(geometry.segments.unknown.dasharray.startsWith("1.2 2"));
+}
+
+{
+  const geometry = model.vitals(
+    0,
+    { operational: 0, degraded: 0, outage: 0, maintenance: 0, unknown: 0 },
+    "unknown",
+  );
+  assert.equal(geometry.signals, null);
+  assert.equal(geometry.signalLength, 0);
+  assert.equal(geometry.scaleGap, "0 100");
+  assert.equal(geometry.segments.unknown.dasharray, "0 100");
+}
+
 console.log("status model ok");

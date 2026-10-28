@@ -31,13 +31,14 @@ The exemption is not a blanket pass. `scripts/validate_status.py`:
 
 Lifting the exemption requires the brand layer to publish a dark-surface variant whose icon and `TECHNOLOGIES` label reach 3:1 while the wordmark remains legible; this repository must not recolour the published asset.
 
-`templates/index.html` and `templates/404.html` are the source. They reference brand assets with `{{asset:<logical-name>}}` placeholders and site assets with `{{site:<logical-name>}}` placeholders. `make brand` runs `cmd/genstatus` from the platform checkout, then the site renderer and the retention gate:
+`templates/index.html` and `templates/404.html` are the source. They reference brand assets with `{{asset:<logical-name>}}` placeholders and site assets with `{{site:<logical-name>}}` placeholders. `make brand` runs `cmd/genstatus` from the platform checkout, then the site renderer, the edge-config renderer, and the retention gate:
 
 - `cmd/genstatus` resolves every brand placeholder from the brand manifest and fails on an unknown name, an unresolved asset placeholder, or a literal hashed brand filename. The brand target runs it with `-brand-only`, so it writes the hashed brand assets and `brand.manifest.json` but leaves the pages to this repository's renderer; that is what lets the renderer read the previous snapshot binding before replacing it, and makes a rebuild of an unchanged document byte-identical.
 - `scripts/build_site.py` resolves the site placeholders to content-hashed names, writes `site.manifest.json`, generates the print palette from the brand light tokens, and renders the snapshot from the exact `status.json` bytes.
+- `scripts/render_edge_config.py` renders `deploy/Caddyfile` from `deploy/cache-policy.json` and the shared CSP; `make edge-check` compares it byte for byte.
 - `scripts/prune_assets.py` records newly retired generated files in `asset-retention.json` and deletes files whose seven-day retention window has expired. `make brand-check` fails when an unmanifested file has no record or its window is overdue.
 
-Never edit the root `index.html`, `404.html`, `styles.css` hashed copies, `site.manifest.json`, `asset-retention.json`, the hashed brand assets, or `brand.manifest.json` by hand. Change the template, the site source, the document, or the brand repository and run `make brand`. `make brand-check` verifies the committed output without writing. Both targets read `.toolchain/platform` and `.toolchain/brand` by default; pass `PLATFORM=` and `BRAND=` to use other checkouts.
+Never edit the root `index.html`, `404.html`, `styles.css` hashed copies, `site.manifest.json`, `asset-retention.json`, `deploy/Caddyfile`, the hashed brand assets, or `brand.manifest.json` by hand. Change the template, the site source, the document, or the brand repository and run `make brand`. `make brand-check` verifies the committed output without writing. Both targets read `.toolchain/platform` and `.toolchain/brand` by default; pass `PLATFORM=` and `BRAND=` to use other checkouts.
 
 The page links exactly one `brand.<hash>.css`. `scripts/validate_status.py` requires that link, proves its filename is the `brand.css` entry in `brand.manifest.json`, and recomputes the file's SHA-256 and byte size. A second brand link, a link to an older sheet, or a hand-edited digest fails. An unmanifested file is allowed only inside the seven-day retirement window; after that the same gate fails until `make brand` prunes it.
 
@@ -56,13 +57,13 @@ The public board is a graphite surface (`data-theme="dark"`). It opens with a te
 - `stale`: a missing, empty, future, expired, or aged heartbeat shows `L'état du service est inconnu`, one plain sentence that the service is not confirmed down and the page updates when a signal arrives, `Dernier signal`, `Dernière lecture`, and the source link. The stale notice sits above the hero.
 - `error`: one error notice with one retry action, no rows, no vitals, and no counts. A failed read never shows the stale notice at the same time.
 
-The vitals instrument uses solid arcs only for confirmed component states. Unknown segments are dashed and muted, so a fully unknown board never looks like a solid healthy ring. The centre is a plain count such as `5 composantes`, never a zero-padded `05`. The legend counts the same components.
+The vitals instrument uses solid arcs only for confirmed component states. Unknown segments are dashed and muted, so a fully unknown board never looks like a solid healthy ring. The centre is a plain count such as `5 composantes`, never a zero-padded `05`. The legend counts the same components. The publish-time snapshot renders the same counts and arcs that `app.js` will render, and the instrument is visible in the server HTML, so the first read updates values in place instead of revealing a new block.
 
 The component board is a compact list: an index, a name, and a status badge. One shared line above the list explains the state for every row. The page does not repeat the same sentence five times.
 
 The static HTML is a real snapshot, not a placeholder. At publish time the workflow holds the exact signed document and `scripts/build_site.py` renders the headline, the component rows, the incident journal, the `generated_at` time, and a snapshot marker into the page. The body records the document's SHA-256 and the instant the freshness rules were applied. `scripts/validate_status.py` re-renders the same document and rejects a page whose digest, instant, headline, rows, counts, summary, or stale notice disagree. A stale, future, expired, or missing heartbeat forces the headline, every row, and the vitals count to `unknown`; only a fresh heartbeat may repeat the publisher's summary.
 
-With JavaScript disabled the page keeps that snapshot, hides the language switch and the live check time, and links `status.json` in the `<noscript>` note and the footer. With JavaScript enabled, the snapshot stays on screen until the first read succeeds or fails; the page then refreshes every 60 seconds and on visibility change. A failed read replaces the board with the unavailable view and one retry action, as before.
+With JavaScript disabled the page keeps that snapshot, keeps the snapshot check time and vitals visible, hides the language switch while reserving its space, and links `status.json` in the `<noscript>` note and the footer. With JavaScript enabled, the snapshot stays on screen until the first read succeeds or fails; the page then refreshes every 60 seconds and on visibility change. A failed read replaces the board with the unavailable view and one retry action, as before.
 
 Print and forced-colours light mode cannot use the reverse lockup: its white wordmark disappears on a light sheet. Both blocks hide that asset and show the published one-colour `icon-color.svg` with a text `SBK Techno` wordmark. The print palette is generated from the brand's light tokens and re-measured by the validator, so it cannot drift from the brand sheet.
 
@@ -80,13 +81,15 @@ At most one notice sits above the hero, so a failed read or an unconfirmed heart
 
 ### Caching and delivery
 
-GitHub Pages sets a short cache on every response, including HTML; it does not let this repository choose per-file headers. The site therefore treats HTML and assets differently by **URL**, not by header:
+GitHub Pages sets a short cache on every response, including HTML; it does not let this repository choose per-file headers. The site therefore keeps one declared policy in `deploy/cache-policy.json` and treats HTML and assets differently by **URL** and by that policy:
 
+- `deploy/cache-policy.json` is the only owner of the cache values: HTML is `public, max-age=600, must-revalidate`, `status.json` is `no-store`, and a filename carrying a 12 to 64 character content hash is `public, max-age=31536000, immutable`.
+- `scripts/render_edge_config.py` renders `deploy/Caddyfile` from that policy. The generated config serves the static tree, sets the hash rule, keeps the heartbeat no-store, and adds the security headers a meta tag cannot carry. `make edge` writes it; `make edge-check` fails when it drifts.
 - The pages link only content-hashed copies of `styles.css`, `app.js`, `status-model.js`, and the generated print palette under `assets/`, recorded in `site.manifest.json`. The unhashed files remain build inputs and are not referenced by either document. A change produces a new URL, so a cached HTML document cannot pair a new script with an old stylesheet or vice versa.
 - `index.html` and `404.html` keep stable URLs. A browser may reuse them for the Pages cache window; the hashed asset URLs make that reuse safe. The previous generated files are retained for seven days (`asset-retention.json`), longer than any Pages HTML cache.
 - The status document is fetched with `cache: "no-store"` and a cache-busting query; the page polls every 60 seconds and on visibility change.
 
-The future edge should set `Cache-Control: public, max-age=600, must-revalidate` for HTML and `public, max-age=31536000, immutable` for `assets/` and the hashed brand files. GitHub Pages cannot send those headers, and `immutable` is not safe to emulate with a meta tag. Until the edge exists, the hashed URLs are the mismatch protection.
+GitHub Pages still ignores this policy and caps every response at its own short cache. Until the domain moves to the Caddy edge, the live origin cannot send `immutable`, so the hashed URLs remain the mismatch protection. `make cls-check` proves the policy the edge will apply; `make verify-published` checks the live origin against whichever host policy it actually has.
 
 ## Post-publish verification
 
@@ -99,7 +102,7 @@ The check list has one owner, `scripts/verify_published.py`:
 - `/` and `/404.html` are live HTML and match the built pages byte for byte.
 - Every resource the pages reference is a manifest-owned, content-hashed asset recorded by `site.manifest.json` or `brand.manifest.json`, is live with a 200, and matches its recorded SHA-256, byte size, and media type. Fonts referenced by the brand stylesheet are checked the same way. Asset names come from the built pages and the generated manifests, never from a list in the check.
 - The page's `data-status-digest` equals the SHA-256 of the live `status.json`, and its `data-snapshot-at` equals the snapshot instant recorded by the built page.
-- HTML is cacheable for at most 600 seconds with an ETag or `Last-Modified` validator, and a conditional request returns 304 with an empty body. Content-hashed assets are either served `immutable` for at least a year, or, on GitHub Pages, served with the host's short cache; the content hash in the URL is the immutability guarantee because Pages does not let this repository set per-file headers. Pass `--host-policy edge` through `VERIFY_PUBLISHED_FLAGS` when the edge exists to require the immutable header.
+- HTML is cacheable for the `deploy/cache-policy.json` limit with an ETag or `Last-Modified` validator, and a conditional request returns 304 with an empty body. Content-hashed assets are either served `immutable` for at least the policy's one-year minimum, or, on GitHub Pages, served with the host's short cache; the content hash in the URL is the immutability guarantee because Pages does not let this repository set per-file headers. Pass `--host-policy edge` through `VERIFY_PUBLISHED_FLAGS` when the edge exists to require the immutable header.
 - No response sets a cookie, and `/assets/` or a directory path is not a listing.
 
 Exit status is `0` when every check passes, `1` when a published check fails, and `2` for a usage error. Paths are verified against the checked-out build, so run the command on a clean, current `main` after the publish commit and a Pages deployment.
@@ -212,6 +215,14 @@ Run the local checks with:
 
 ```sh
 make validate
+make cls-check
+```
+
+`make cls-check` is the browser layout and cache gate. It needs Playwright and its Chromium build, which CI does not install:
+
+```sh
+python3 -m pip install --user playwright
+python3 -m playwright install chromium
 ```
 
 `make validate` needs the platform and brand checkouts. By default it reads `.toolchain/platform` and `.toolchain/brand`; that directory is Git-ignored, so a local checkout never becomes part of the site. Create the links once:
@@ -224,7 +235,7 @@ ln -s /path/to/brand .toolchain/brand
 
 Alternatively pass `make validate PLATFORM=/path/to/platform BRAND=/path/to/brand`. CI pins both revisions in `.github/actions/toolchain/action.yml`; use the same revisions locally when reproducing a CI result. A missing checkout fails with the exact path and the override to set.
 
-`make validate` expands `GATE_TARGETS` from the Makefile: the document and site validator, the unit suites, the explicit workflow/Makefile contract test, `brand-check` (generator check), `render-check` (rendered-site reproduction), `assets-check` (retention ledger), the platform `statuscheck` against `status.json`, `governance-check` (the generated files against the pinned platform), the pinned `actionlint` over both workflows, the pre-push `hook` installation and `hook-check`, and `brandlint`. The workflow checks out this repository, invokes the pinned toolchain action, and runs that one target; it keeps no second list of checks.
+`make validate` expands `GATE_TARGETS` from the Makefile: the document and site validator, the unit suites, the explicit workflow/Makefile contract test, `brand-check` (generator check), `render-check` (rendered-site reproduction), `edge-check` (the generated Caddy config against the cache policy), `assets-check` (retention ledger), the platform `statuscheck` against `status.json`, `governance-check` (the generated files against the pinned platform), the pinned `actionlint` over both workflows, the pre-push `hook` installation and `hook-check`, and `brandlint`. The workflow checks out this repository, invokes the pinned toolchain action, and runs that one target; it keeps no second list of checks.
 
 `governance-check` runs `cmd/genguides` from `.toolchain/platform` and compares `AGENTS.md`, `CODEOWNERS`, `CONTRIBUTING.md`, and `SECURITY.md` byte for byte. It refuses a platform checkout at another revision or with uncommitted changes, so the pin in `.github/actions/toolchain/action.yml` stays the one owner. `std/repos.yaml` declares only the governance group for this repository, so the generator does not render `.githooks/pre-push` here yet; that hook was rendered from the same platform template at the pin, and `hook-check` proves it is executable, carries the generated header, and is the configured hooks path. The platform registry must add `hook` to the status entry before `governance-check` can verify the hook body.
 
@@ -247,15 +258,16 @@ The workflow then runs `make validate`, which expands the same `GATE_TARGETS` li
 - The print palette is regenerated from the brand light block and compared byte for byte; the `@media print` block exists, hides the reverse lockup, shows the print-safe mark, and body text and status tokens measure at least 4.5:1 on the print canvas and on white with backgrounds dropped.
 - The site manifest's four hashed assets match their SHA-256 and byte size, and each copy matches its source file or the generated print palette; the pages reference the hashed names and the print stylesheet is print-only.
 - `status.json` schema: version 1, valid statuses, unique ids, both languages, UTC `Z` timestamps, paired `generated_at`/`expires_at`, a lifetime of at most 15 minutes, no heartbeat more than 5 minutes in the future, and no healthy claim when `generated_at` is null.
-- The presentation contract: the fetch notice has role `alert` and exactly one retry button, the stale notice has role `status`, the two notices cannot be visible together, each component row stays compact, and the vitals instrument declares all five status segments.
+- The presentation contract: the fetch notice has role `alert` and exactly one retry button, the stale notice has role `status`, the two notices cannot be visible together, each component row stays compact, and the vitals instrument is visible in the static snapshot with counts and arcs that match the rendered rows.
+- `deploy/cache-policy.json` is the only cache owner; `deploy/Caddyfile` is reproduced from it byte for byte, keeps HTML revalidating, keeps `status.json` no-store, and marks every content-hashed filename immutable for one year.
 - The header mark is measured from the file the page references and the surface `.status-header` paints; recoloured fills, a changed surface, and a header-size override fail.
 - Every incident has the required fields and `updated_at` is not before `started_at`.
 - `CNAME` is exactly `status.ia.sbktechno.com` with a final newline.
 - `index.html`, `styles.css`, `app.js`, and `status-model.js` exist and are non-empty.
 
-`make verify-published URL=...` is the separate post-publish check. It is deliberately outside `GATE_TARGETS` because it needs the deployed origin; see [Post-publish verification](#post-publish-verification).
+`make verify-published URL=...` is the separate post-publish check. It is deliberately outside `GATE_TARGETS` because it needs the deployed origin; see [Post-publish verification](#post-publish-verification). `make cls-check` is also outside `GATE_TARGETS` because it needs Playwright; it serves the built site from a loopback origin, holds `status.json` until the first paint, and proves at 1440x900 and 390x844 that CLS stays below 0.05, that the hero and board do not move when the read resolves, and that hashed assets carry the immutable header.
 
-`make validate` runs the document/site validator, the unit tests, `contract`, `make brand-check`, `make render-check`, the retention check, the platform `statuscheck`, `make governance-check`, the pinned `actionlint`, `hook` and `hook-check`, and `cmd/brandlint`. `scripts/ci_contract_test.py` parses the Makefile and both workflows: it fails if `make validate` stops expanding `GATE_TARGETS`, if a workflow grows an inline check or re-implements the publish decision, if the toolchain refs stop being full 40-hex commit SHAs, if the private checkouts lose their read-key secret, or if publish stops rebuilding, deciding, and validating before its commit. The Python suite runs `scripts/status_model_test.mjs` and `scripts/snapshot_contract_test.mjs` through Node, so the live browser model and the publish-time Python snapshot agree on loading, fresh, stale, null, future, aged, expired, and failed-fetch states.
+`make validate` runs the document/site validator, the unit tests, `contract`, `make brand-check`, `make render-check`, `make edge-check`, the retention check, the platform `statuscheck`, `make governance-check`, the pinned `actionlint`, `hook` and `hook-check`, and `cmd/brandlint`. `scripts/ci_contract_test.py` parses the Makefile and both workflows: it fails if `make validate` stops expanding `GATE_TARGETS`, if a workflow grows an inline check or re-implements the publish decision, if the toolchain refs stop being full 40-hex commit SHAs, if the private checkouts lose their read-key secret, or if publish stops rebuilding, deciding, and validating before its commit. The Python suite runs `scripts/status_model_test.mjs` and `scripts/snapshot_contract_test.mjs` through Node, so the live browser model and the publish-time Python snapshot agree on loading, fresh, stale, null, future, aged, expired, and failed-fetch states.
 
 No third-party action is used beyond `actions/checkout` and `actions/setup-go`; the local composite action pins both.
 
@@ -268,7 +280,7 @@ No third-party action is used beyond `actions/checkout` and `actions/setup-go`; 
 
 ### Deployment follow-up: response headers
 
-GitHub Pages does not allow arbitrary response headers. The following headers can only be set by the future edge; they are recorded here so the limitation is explicit:
+GitHub Pages does not allow arbitrary response headers. `deploy/cache-policy.json` owns the cache values and `scripts/render_edge_config.py` generates `deploy/Caddyfile` from it; that file is the deployable edge owner for the headers Pages cannot send. The values are:
 
 | Header | Value | Why it cannot be a meta tag |
 | --- | --- | --- |
@@ -280,4 +292,4 @@ GitHub Pages does not allow arbitrary response headers. The following headers ca
 | `Referrer-Policy` | `no-referrer` | The meta tag is present, but the header is authoritative. |
 | `X-Frame-Options` | `DENY` | Legacy complement to `frame-ancestors`. |
 
-Until the edge exists, the hashed asset URLs and the single generated CSP are the protections this repository can enforce.
+Until the domain is served by the Caddy edge, GitHub Pages ignores `deploy/Caddyfile` and caps every response at its own short cache; the hashed asset URLs and the single generated CSP remain the protections the live origin can enforce.

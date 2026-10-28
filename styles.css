@@ -1106,20 +1106,18 @@ main:focus-visible {
   gap: var(--sbk-space-1);
 }
 
-/* These controls need app.js; without it the published French snapshot stays
-   in place and no dead control is shown. This rule follows the layout rule so
-   it wins at equal specificity. */
+/* The language control needs app.js. Without it the published French snapshot
+   stays in place and the control is not shown, but it keeps its space so
+   removing the no-js class cannot move the footer. This rule follows the
+   layout rule so it wins at equal specificity. */
 .no-js .status-footer .lang {
-  display: none;
+  visibility: hidden;
 }
 
-/* The vitals instrument and the check time are derived from status.json;
-   without JavaScript they would show placeholders, so they stay out of the
-   honest no-JS view. */
-.no-js .vitals,
-.no-js .hero__check {
-  display: none;
-}
+/* The vitals instrument and the check time are rendered from the publish-time
+   snapshot, so they are honest without JavaScript and stay visible. Their
+   space is reserved before app.js runs; the first status.json read only
+   updates values in place. */
 
 .lang-btn {
   display: inline-flex;

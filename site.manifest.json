@@ -5,26 +5,26 @@
     {
       "name": "styles.css",
       "source": "styles.css",
-      "file": "assets/styles.5227331ecc90.css",
+      "file": "assets/styles.2e553ad448e5.css",
       "mediaType": "text/css; charset=utf-8",
-      "sha256": "5227331ecc90290cabbe54aa3f9f3f29da0e36da2ad61f00974908a08a98dbdb",
-      "bytes": 33564
+      "sha256": "2e553ad448e5407d67a90473eefdfd19e36ada97e18019138b2fed7bf6df8b43",
+      "bytes": 33680
     },
     {
       "name": "app.js",
       "source": "app.js",
-      "file": "assets/app.c8bcc4efafa5.js",
+      "file": "assets/app.c9a4706a7557.js",
       "mediaType": "text/javascript; charset=utf-8",
-      "sha256": "c8bcc4efafa556772179e9bccc1f6e1ee941de44e4a89fe908643e3bc01c73dc",
-      "bytes": 29436
+      "sha256": "c9a4706a7557fb447c0f714956f0f4b27d574b14d7ed03d0247f55fe74f46cdf",
+      "bytes": 28210
     },
     {
       "name": "status-model.js",
       "source": "status-model.js",
-      "file": "assets/status-model.8a886c35f08a.js",
+      "file": "assets/status-model.fe2b9ffd6c79.js",
       "mediaType": "text/javascript; charset=utf-8",
-      "sha256": "8a886c35f08ab512d739f22d623c5698e1f94cca8981e28ec7fdcf64ec4c4af0",
-      "bytes": 6658
+      "sha256": "fe2b9ffd6c79e48e9235b26e48bf724d751f31dde3298992b6f77eba955c21b2",
+      "bytes": 8497
     },
     {
       "name": "print.css",

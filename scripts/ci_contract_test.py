@@ -131,6 +131,9 @@ class GateContractTest(unittest.TestCase):
             "render-check": (
                 'python3 scripts/build_site.py --root "$(STATUS_ROOT)" --check'
             ),
+            "edge-check": (
+                'python3 scripts/render_edge_config.py --root "$(STATUS_ROOT)" --check'
+            ),
             "assets-check": (
                 'python3 scripts/prune_assets.py --root "$(STATUS_ROOT)" --check'
             ),

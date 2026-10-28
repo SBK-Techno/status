@@ -446,6 +446,39 @@ class ValidateStatusTest(unittest.TestCase):
                 self.assertEqual(
                     "fresh" if expected["fresh"] else "stale", current["mode"]
                 )
+                vitals = status_snapshot.vitals_state(
+                    expected["components"], expected["fresh"]
+                )
+                browser_vitals = current["vitals"]
+                self.assertEqual(vitals["total"], browser_vitals["total"])
+                self.assertEqual(vitals["counts"], browser_vitals["counts"])
+                self.assertEqual(vitals["signals"], browser_vitals["signals"])
+                self.assertAlmostEqual(
+                    vitals["signal_length"],
+                    browser_vitals["signalLength"],
+                    delta=1e-6,
+                )
+                for label in ("scale_gap",):
+                    self.assertEqual(
+                        [float(part) for part in vitals[label].split()],
+                        [
+                            float(part)
+                            for part in browser_vitals["scaleGap"].split()
+                        ],
+                    )
+                for key in status_snapshot.VITAL_KEYS:
+                    for field in ("dasharray", "dashoffset"):
+                        want = vitals["segments"][key][field]
+                        got = browser_vitals["segments"][key][field]
+                        self.assertEqual(
+                            len(want.split()),
+                            len(got.split()),
+                            f"{key} {field} token count",
+                        )
+                        for left, right in zip(want.split(), got.split()):
+                            self.assertAlmostEqual(
+                                float(left), float(right), delta=0.002
+                            )
 
     def test_js_disabled_page_shows_status_rows_and_marker(self) -> None:
         page = repository_page("index.html")
@@ -465,6 +498,14 @@ class ValidateStatusTest(unittest.TestCase):
         self.assertNotIn("hidden", hero.attrs)
         word = next(root.find_all(element_id="hero-status-text"), None)
         self.assertTrue(word.text().strip())
+        vitals = next(root.find_all(element_id="vitals"), None)
+        self.assertNotIn("hidden", vitals.attrs)
+        self.assertEqual(vitals.attrs.get("data-total"), str(len(rows)))
+        counts = {
+            node.attrs.get("data-count"): node.text().strip()
+            for node in vitals.find_all("span", class_name="vitals__count")
+        }
+        self.assertEqual(sum(int(value) for value in counts.values()), len(rows))
         marker = next(root.find_all(element_id="snapshot-marker"), None)
         self.assertTrue(marker.text().strip())
         noscript = next(root.find_all("noscript"), None)
@@ -625,13 +666,13 @@ class ValidateStatusTest(unittest.TestCase):
                 ),
                 "#snapshot-marker",
             ),
-            "vitals visible": (
+            "vitals hidden": (
                 lambda p: p.replace(
-                    '<div class="vitals" id="vitals" aria-hidden="true" data-total="0" hidden>',
-                    '<div class="vitals" id="vitals" aria-hidden="true" data-total="0">',
+                    '<div class="vitals" id="vitals"',
+                    '<div class="vitals" id="vitals" hidden',
                     1,
                 ),
-                "must stay hidden",
+                "must stay visible",
             ),
             "duplicate csp": (
                 lambda p: p.replace(
