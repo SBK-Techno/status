@@ -65,23 +65,31 @@ jobs:
           PY
 
       # The generator, renderer, and retention writer are the same commands a
-      # developer runs. Pruning runs before the commit so an expired asset can
+      # developer runs. Pruning runs before the decision so an expired asset can
       # never be published by a heartbeat.
       - name: Rebuild the generated site and prune retired assets
         run: make brand
 
-      # This is the exact CI gate: the Makefile owns the check list.
+      # The script owns the no-op contract: it compares the publish surface
+      # with the published commit and reports whether this heartbeat changes
+      # anything. A duplicate payload, or a rebuild that only moved the
+      # snapshot instant, sets changed=false below and publishes nothing.
+      - name: Decide whether this heartbeat changes the published site
+        id: publish
+        run: make publish-check PUBLISH_DECISION_FILE="$GITHUB_OUTPUT"
+
+      # This is the exact CI gate: the Makefile owns the check list. A no-op
+      # stops here, so it neither validates nor commits, and Pages never sees
+      # an empty heartbeat commit.
       - name: Run the same validation gate as CI
+        if: steps.publish.outputs.changed == 'true'
         run: make validate
 
       - name: Commit the heartbeat
+        if: steps.publish.outputs.changed == 'true'
         run: |
           git config user.name "SBK status publisher"
           git config user.email "status@sbktechno.com"
-          git add status.json index.html site.manifest.json assets asset-retention.json
-          if git diff --cached --quiet; then
-            echo "status unchanged"
-            exit 0
-          fi
+          git add -A
           git commit -m "chore(status): publish signed heartbeat"
           git push

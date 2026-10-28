@@ -161,6 +161,12 @@ class GateContractTest(unittest.TestCase):
             './cmd/genstatus -root "$(STATUS_ROOT)" -brand "$(BRAND_DIR)"',
             recipe,
         )
+        self.assertIn(
+            "-brand-only",
+            recipe,
+            "the platform must not overwrite the page before the renderer "
+            "reads its previous snapshot binding",
+        )
         self.assertIn("$(MAKE) --no-print-directory prune", recipe)
         self.assertIn(
             'prune_assets.py --root "$(STATUS_ROOT)" --write',
@@ -192,13 +198,19 @@ class GateContractTest(unittest.TestCase):
     def test_publish_rebuilds_prunes_and_validates_before_commit(self) -> None:
         commands = run_steps(self.publish)
         brand = next(i for i, command in enumerate(commands) if command[1] == "make brand")
+        decision = next(
+            i
+            for i, command in enumerate(commands)
+            if command[1].startswith("make publish-check")
+        )
         validate = next(
             i for i, command in enumerate(commands) if command[1] == "make validate"
         )
         commit = next(
             i for i, command in enumerate(commands) if "git push" in command[1]
         )
-        self.assertLess(brand, validate, "prune/render must precede the gate")
+        self.assertLess(brand, decision, "the tree must be rebuilt before the decision")
+        self.assertLess(decision, validate, "the gate must follow the decision")
         self.assertLess(validate, commit, "nothing may be committed before the gate")
         self.assertIn("uses: ./.github/actions/toolchain", self.publish)
         self.assertIn("STATUS_HEARTBEAT_HMAC", self.publish)
@@ -210,6 +222,7 @@ class GateContractTest(unittest.TestCase):
             "scripts/build_site.py",
             "scripts/validate_status.py",
             "scripts/prune_assets.py",
+            "scripts/publish_check.py",
             "go run ./cmd/",
             "validate_document",
         ):
@@ -221,6 +234,44 @@ class GateContractTest(unittest.TestCase):
                 )
         self.assertIn("chore(status): publish signed heartbeat", combined)
 
+    def test_publish_check_owns_the_noop_decision(self) -> None:
+        targets = make_variable(self.makefile, "GATE_TARGETS").split()
+        self.assertNotIn(
+            "publish-check",
+            targets,
+            "publish-check compares against git history; the site gate must "
+            "stay reproducible from the working tree alone",
+        )
+        recipe = make_recipe(self.makefile, "publish-check")
+        self.assertIn(
+            'python3 scripts/publish_check.py --root "$(STATUS_ROOT)"', recipe
+        )
+        self.assertIn('--base "$(PUBLISH_BASE)"', recipe)
+        self.assertIn("--decision-file", recipe)
+
+        workflow_steps = {name: body for name, body, _ in steps(self.publish)}
+        decision = workflow_steps[
+            "Decide whether this heartbeat changes the published site"
+        ]
+        self.assertIn("make publish-check", decision)
+        self.assertIn('PUBLISH_DECISION_FILE="$GITHUB_OUTPUT"', decision)
+
+        for name in (
+            "Run the same validation gate as CI",
+            "Commit the heartbeat",
+        ):
+            with self.subTest(gated=name):
+                self.assertIn(
+                    "if: steps.publish.outputs.changed == 'true'",
+                    workflow_steps[name],
+                    f"{name} must only run for a real change",
+                )
+        self.assertNotIn(
+            "git diff --cached --quiet",
+            workflow_steps["Commit the heartbeat"],
+            "the commit step must not re-decide the no-op contract",
+        )
+
     def test_publish_and_validate_share_the_gate_command(self) -> None:
         validate_commands = [
             command for _, command in run_steps(self.validate) if command.startswith("make ")
@@ -229,7 +280,14 @@ class GateContractTest(unittest.TestCase):
             command for _, command in run_steps(self.publish) if command.startswith("make ")
         ]
         self.assertEqual(validate_commands, ["make validate"])
-        self.assertEqual(publish_commands, ["make brand", "make validate"])
+        self.assertEqual(
+            publish_commands,
+            [
+                "make brand",
+                'make publish-check PUBLISH_DECISION_FILE="$GITHUB_OUTPUT"',
+                "make validate",
+            ],
+        )
 
     # Pinned inputs ----------------------------------------------------
 

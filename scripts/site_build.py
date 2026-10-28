@@ -43,6 +43,7 @@ ANY_PLACEHOLDER = re.compile(r"\{\{[^}]+\}\}")
 BRAND_LINK = re.compile(r"^brand\.[0-9a-f]{12}\.css$")
 HEX_TOKEN = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
 SNAPSHOT_ATTR = re.compile(r'data-snapshot-at="[^"]*"')
+SNAPSHOT_AT_VALUE = re.compile(r'data-snapshot-at="([^"]+)"')
 DIGEST_ATTR = re.compile(r'data-status-digest="[^"]*"')
 SNAPSHOT_FOOTER = re.compile(
     r'(<span id="snapshot-time">).*?(</span>)', re.DOTALL
@@ -261,14 +262,13 @@ def _select_snapshot_at(
     if page_path.is_file():
         page = page_path.read_text(encoding="utf-8")
         digest_match = re.search(r'data-status-digest="([0-9a-f]{64})"', page)
-        snapshot_match = re.search(r'data-snapshot-at="([^"]+)"', page)
+        snapshot_at = snapshot_at_from_page(page)
         if (
             digest_match is not None
             and digest_match.group(1) == document_digest(status_bytes)
-            and snapshot_match is not None
-            and parse_timestamp(snapshot_match.group(1)) is not None
+            and snapshot_at is not None
         ):
-            return snapshot_match.group(1)
+            return snapshot_at
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -342,14 +342,19 @@ def expected_site_outputs(
     return outputs
 
 
+def snapshot_at_from_page(page: str) -> str | None:
+    """Return the snapshot instant recorded in one rendered page."""
+    match = SNAPSHOT_AT_VALUE.search(page)
+    if match is None or parse_timestamp(match.group(1)) is None:
+        return None
+    return match.group(1)
+
+
 def current_snapshot_at(root: Path) -> str | None:
     page_path = root / "index.html"
     if not page_path.is_file():
         return None
-    match = re.search(r'data-snapshot-at="([^"]+)"', page_path.read_text(encoding="utf-8"))
-    if match is None or parse_timestamp(match.group(1)) is None:
-        return None
-    return match.group(1)
+    return snapshot_at_from_page(page_path.read_text(encoding="utf-8"))
 
 
 def check_site(root: Path) -> list[str]:
