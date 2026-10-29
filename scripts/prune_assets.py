@@ -2,10 +2,13 @@
 """Retain retired generated assets for a bounded window, then prune them.
 
 A content-hashed asset may still be named by an HTML document a browser cached
-before the last deploy. GitHub Pages serves every file with a ten-minute
-cache, so a retired asset only has to survive that window. The repository
-keeps a seven-day safety window instead of deleting in the same commit.
+before the last deploy. The platform edge revalidates the pages, so a retired
+asset only has to survive the browser that has not revalidated yet. The
+repository keeps a seven-day safety window instead of deleting in the same
+commit.
 
+The content-hash shape belongs to the platform artifact contract; this module
+loads it through ``platform_contract`` instead of declaring a second pattern.
 This script owns the ledger. ``--write`` records newly unreferenced files and
 deletes files whose retirement is older than the window. ``--check`` fails when
 an unmanifested generated file has no record, or when its window has expired
@@ -21,16 +24,21 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import platform_contract
 import site_build
 
 RETENTION_DAYS = 7
 LEDGER = "asset-retention.json"
-GENERATED_ASSET = re.compile(r"^[a-z0-9][a-z0-9.-]*\.[0-9a-f]{12}\.[a-z0-9]+$")
 TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 class RetentionError(Exception):
     pass
+
+
+def is_generated_asset(name: str) -> bool:
+    """Whether a published file name carries the platform content hash."""
+    return platform_contract.artifact_contract().is_content_hashed(name)
 
 
 def parse_timestamp(value: object) -> datetime | None:
@@ -65,12 +73,12 @@ def current_assets(root: Path) -> set[str]:
 def generated_files(root: Path) -> set[str]:
     found: set[str] = set()
     for path in root.iterdir():
-        if path.is_file() and GENERATED_ASSET.fullmatch(path.name):
+        if path.is_file() and is_generated_asset(path.name):
             found.add(path.name)
     assets = root / "assets"
     if assets.is_dir():
         for path in assets.iterdir():
-            if path.is_file() and GENERATED_ASSET.fullmatch(path.name):
+            if path.is_file() and is_generated_asset(path.name):
                 found.add(path.relative_to(root).as_posix())
     return found
 
@@ -102,6 +110,10 @@ def load_ledger(root: Path) -> dict:
             raise RetentionError(f"{LEDGER}: each retired entry must be an object")
         if not isinstance(entry.get("file"), str) or not entry["file"]:
             raise RetentionError(f"{LEDGER}: retired entry has no file")
+        if not is_generated_asset(entry["file"]):
+            raise RetentionError(
+                f"{LEDGER}: {entry['file']}: retired file is not content-addressed"
+            )
         if parse_timestamp(entry.get("retired_at")) is None:
             raise RetentionError(
                 f"{LEDGER}: {entry['file']}: retired_at must be UTC ISO 8601"

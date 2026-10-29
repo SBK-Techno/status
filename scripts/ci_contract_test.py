@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MAKEFILE = ROOT / "Makefile"
-README = ROOT / "README.md"
+OPERATIONS = ROOT / "docs" / "OPERATIONS.md"
 VALIDATE_WORKFLOW = ROOT / ".github" / "workflows" / "validate.yml"
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 TOOLCHAIN_ACTION = ROOT / ".github" / "actions" / "toolchain" / "action.yml"
@@ -99,7 +99,8 @@ class GateContractTest(unittest.TestCase):
         targets = make_variable(self.makefile, "GATE_TARGETS").split()
         self.assertEqual(len(targets), len(set(targets)))
         self.assertTrue(
-            {"brand-check", "render-check", "statuscheck", "lint"} <= set(targets)
+            {"brand-check", "render-check", "artifact-check", "statuscheck", "lint"}
+            <= set(targets)
         )
         match = re.search(r"(?m)^validate:(.*)$", self.makefile)
         self.assertIsNotNone(match)
@@ -131,8 +132,9 @@ class GateContractTest(unittest.TestCase):
             "render-check": (
                 'python3 scripts/build_site.py --root "$(STATUS_ROOT)" --check'
             ),
-            "edge-check": (
-                'python3 scripts/render_edge_config.py --root "$(STATUS_ROOT)" --check'
+            "artifact-check": (
+                'python3 scripts/artifact_build.py --root "$(STATUS_ROOT)" '
+                '--check --platform "$(PLATFORM_DIR)"'
             ),
             "assets-check": (
                 'python3 scripts/prune_assets.py --root "$(STATUS_ROOT)" --check'
@@ -340,14 +342,14 @@ class GateContractTest(unittest.TestCase):
         self.assertIn('--signature "$(SIGNATURE)"', recipe)
         self.assertIn('--hmac-key-file "$(HMAC_KEY_FILE)"', recipe)
         self.assertNotIn("--write", recipe)
-        self.assertIn("make verify-published URL=", read(README))
+        self.assertIn("make verify-published URL=", read(OPERATIONS))
         publish_commands = "\n".join(
             command for _, command in run_steps(self.publish)
         )
         self.assertNotIn(
             "verify-published",
             publish_commands,
-            "the publish job cannot verify a Pages deployment it has not created yet",
+            "the publish job cannot verify a deployment it has not created yet",
         )
 
     # Pinned inputs ----------------------------------------------------

@@ -42,9 +42,7 @@ REQUIRED_CHECKS = {
     "asset-integrity",
     "asset-transitive",
     "snapshot",
-    "cache-html",
-    "cache-conditional",
-    "cache-assets",
+    "http-conditional",
     "no-listing",
     "no-cookie",
 }
@@ -55,7 +53,6 @@ class Route:
     status: int = 200
     body: bytes = b""
     content_type: str = "text/html; charset=utf-8"
-    cache: str = "max-age=600"
     etag: str = ""
     headers: tuple[tuple[str, str], ...] = ()
     allow_conditional: bool = True
@@ -69,9 +66,6 @@ class Route:
 
 class FixtureHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-
-    def version_string(self) -> str:
-        return "GitHub.com"
 
     def do_GET(self) -> None:
         site: FixtureSite = self.server.site  # type: ignore[attr-defined]
@@ -88,7 +82,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
                 for name, value in route.headers:
                     self.send_header(name, value)
                 self.send_header("ETag", route.etag)
-                self.send_header("Cache-Control", route.cache)
                 self.send_header("Content-Length", str(len(route.conditional_body)))
                 self.send_header("Connection", "close")
                 self.end_headers()
@@ -100,7 +93,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
         for name, value in route.headers:
             self.send_header(name, value)
         self.send_header("Content-Type", route.content_type)
-        self.send_header("Cache-Control", route.cache)
         self.send_header("ETag", route.etag)
         self.send_header("Content-Length", str(len(route.body)))
         self.send_header("Connection", "close")
@@ -154,14 +146,12 @@ class FixtureSite:
         content_type: str,
         *,
         status: int = 200,
-        cache: str = "max-age=600",
         headers: tuple[tuple[str, str], ...] = (),
     ) -> Route:
         route = Route(
             status=status,
             body=body,
             content_type=content_type,
-            cache=cache,
             headers=headers,
         )
         self.routes[path] = route
@@ -270,40 +260,15 @@ class VerifyPublishedTest(unittest.TestCase):
         self.assert_check_fails(failed, "status-signature", "mismatch")
         self.assertNotIn(key.decode("utf-8"), verify_published.render(failed))
 
-    def test_wrong_html_cache_fails(self) -> None:
-        self.server.site.routes["/"].cache = "max-age=31536000"
-        report = self.verify()
-        self.assert_check_fails(report, "cache-html", "exceeds")
-
-    def test_wrong_asset_cache_fails(self) -> None:
-        asset = next(
-            asset for asset in self.plan.assets.values() if not asset.transitive
-        )
-        self.server.site.routes[asset.path].cache = "no-store"
-        report = self.verify()
-        self.assert_check_fails(report, "cache-assets", "must not be private")
-
-    def test_immutable_without_a_long_max_age_fails(self) -> None:
-        asset = next(
-            asset for asset in self.plan.assets.values() if not asset.transitive
-        )
-        self.server.site.routes[asset.path].cache = "public, max-age=600, immutable"
-        report = self.verify()
-        self.assert_check_fails(report, "cache-assets", "immutable requires")
-
-    def test_edge_policy_requires_immutable_assets(self) -> None:
-        report = self.verify(host_policy="edge")
-        self.assert_check_fails(report, "cache-assets", "expected immutable")
-
     def test_304_with_a_body_fails(self) -> None:
         self.server.site.routes["/"].conditional_body = b"oops"
         report = self.verify()
-        self.assert_check_fails(report, "cache-conditional", "Content-Length")
+        self.assert_check_fails(report, "http-conditional", "Content-Length")
 
     def test_missing_304_fails(self) -> None:
         self.server.site.routes["/"].allow_conditional = False
         report = self.verify()
-        self.assert_check_fails(report, "cache-conditional", "expected 304")
+        self.assert_check_fails(report, "http-conditional", "expected 304")
 
     def test_directory_listing_fails(self) -> None:
         self.server.site.add(

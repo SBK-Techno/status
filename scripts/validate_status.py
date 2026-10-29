@@ -17,6 +17,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import platform_contract
 import site_build
 import status_snapshot
 from status_snapshot import (
@@ -78,7 +79,6 @@ INCIDENT_FIELDS = {
     "summary_fr",
     "summary_en",
 }
-CNAME = b"status.ia.sbktechno.com\n"
 REQUIRED_FILES = (
     "index.html",
     "404.html",
@@ -88,7 +88,15 @@ REQUIRED_FILES = (
     "site.manifest.json",
     "templates/csp.txt",
 )
-SITE_HOST = "status.ia.sbktechno.com"
+SITE_HOST = None  # resolved from the platform naming standard on first use
+
+
+def status_host() -> str:
+    """Return the one public status host without importing the platform early."""
+    global SITE_HOST
+    if SITE_HOST is None:
+        SITE_HOST = platform_contract.status_host()
+    return SITE_HOST
 DARK_SELECTOR = ':root[data-theme="dark"]'
 BRAND_PROPERTY = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
 REVERSE_LOCKUP = "logo-reverse.svg"
@@ -431,7 +439,7 @@ def check_url(value: str, where: str) -> list[str]:
         return [f"{where}: third-party origin {value!r} is not allowed"]
     parsed = urlsplit(value)
     if parsed.scheme in {"http", "https"}:
-        if (parsed.hostname or "").lower() != SITE_HOST:
+        if (parsed.hostname or "").lower() != status_host():
             return [f"{where}: third-party origin {value!r} is not allowed"]
     elif parsed.scheme == "javascript":
         return [f"{where}: javascript: URL is not allowed"]
@@ -507,7 +515,7 @@ def local_site_path(href: str) -> str | None:
         return None
     parsed = urlsplit(value)
     if parsed.scheme in {"http", "https"}:
-        if (parsed.hostname or "").lower() != SITE_HOST:
+        if (parsed.hostname or "").lower() != status_host():
             return None
         path = parsed.path
     elif parsed.scheme or value.startswith("//"):
@@ -2111,13 +2119,6 @@ def validate_site(root: Path) -> list[str]:
         errors.append("brand.css: must declare --sbk-canvas in the dark theme")
     csp, csp_errors = validate_csp(root)
     errors.extend(csp_errors)
-    cname = root / "CNAME"
-    if not cname.is_file():
-        errors.append("CNAME is missing")
-    elif cname.read_bytes() != CNAME:
-        errors.append("CNAME must contain exactly 'status.ia.sbktechno.com' with a final newline")
-    if not (root / ".nojekyll").is_file():
-        errors.append(".nojekyll is missing")
     for name in REQUIRED_FILES:
         path = root / name
         if not path.is_file() or path.stat().st_size == 0:
@@ -2226,7 +2227,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             errors = validate_site(args.root)
             label = "status site"
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, platform_contract.ContractError) as exc:
         print(f"{exc}", file=sys.stderr)
         return 1
     if errors:

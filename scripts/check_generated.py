@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import platform_contract
 import site_build
 
 
@@ -56,7 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         brand_manifest = site_build.load_brand_manifest(root)
         site_manifest = site_build.load_site_manifest(root)
         csp = site_build.read_csp(root)
-    except (site_build.BuildError, OSError) as exc:
+        host = platform_contract.status_host(platform)
+    except (site_build.BuildError, OSError, platform_contract.ContractError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
@@ -79,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             page = (root / name).read_text(encoding="utf-8")
             template = (root / "templates" / name).read_text(encoding="utf-8")
             normalized = site_build.normalize_page(
-                page, template, site_manifest["assets"], csp
+                page, template, site_manifest["assets"], csp, host
             )
             (staging / name).write_text(normalized, encoding="utf-8")
         result = run_genstatus(platform, brand, staging)

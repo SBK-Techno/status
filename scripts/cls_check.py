@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Browser check for layout stability and the static-asset cache policy.
+"""Browser check for layout stability on the built status site.
 
-The check serves the built site from a loopback origin that applies
-``deploy/cache-policy.json``, holds ``status.json`` until the first paint is
-measured, then releases it. It proves three things at 1440x900 and 390x844:
+The check serves the built site from a loopback origin, holds ``status.json``
+until the first paint is measured, then releases it. It proves three things at
+1440x900 and 390x844:
 
 * the server-rendered snapshot already occupies the vitals space, so the hero
   and board do not move when the first read resolves;
 * cumulative layout shift through that read stays below 0.05;
-* content-hashed assets are immutable for a year while HTML revalidates and
-  status.json stays no-store.
+* every hashed asset the page requests carries the platform contract's
+  content-hash shape.
+
+Response headers and cache policy belong to the platform edge. This local
+origin is not the edge and asserts no header policy.
 
 Run ``make cls-check``. Playwright is a local browser dependency, not part of
 the CI gate: install ``playwright`` and its Chromium build first.
@@ -18,9 +21,6 @@ the CI gate: install ``playwright`` and its Chromium build first.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import http.client
-import json
 import mimetypes
 import posixpath
 import sys
@@ -30,7 +30,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import site_cache
+import platform_contract
 
 VIEWPORTS = ((1440, 900), (390, 844))
 CLS_LIMIT = 0.05
@@ -85,9 +85,8 @@ POSITION_SCRIPT = """
 
 
 class SiteState:
-    def __init__(self, root: Path, policy: site_cache.CachePolicy) -> None:
+    def __init__(self, root: Path) -> None:
         self.root = root
-        self.policy = policy
         self.status_gate = threading.Event()
         self.lock = threading.Lock()
         self.status_requests = 0
@@ -154,20 +153,7 @@ class SiteHandler(BaseHTTPRequestHandler):
         except OSError:
             self.send_error(500)
             return
-        etag = '"' + hashlib.sha256(data).hexdigest() + '"'
-        headers = {
-            "Cache-Control": self.state.policy.cache_control(path),
-            "ETag": etag,
-            "Last-Modified": self.date_time_string(int(file.stat().st_mtime)),
-            "X-Content-Type-Options": "nosniff",
-        }
-        not_modified = self.headers.get("If-None-Match") == etag
-        self.send_response(304 if not_modified else 200)
-        for name, value in headers.items():
-            self.send_header(name, value)
-        if not_modified:
-            self.end_headers()
-            return
+        self.send_response(200)
         media_type, _ = mimetypes.guess_type(file.name)
         if file.suffix == ".js":
             media_type = "text/javascript"
@@ -186,87 +172,14 @@ class SiteServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, root: Path, policy: site_cache.CachePolicy) -> None:
+    def __init__(self, root: Path) -> None:
         super().__init__(("127.0.0.1", 0), SiteHandler)
-        self.state = SiteState(root, policy)
+        self.state = SiteState(root)
 
     @property
     def base_url(self) -> str:
         host, port = self.server_address[:2]
         return f"http://{host}:{port}"
-
-
-def request_headers(
-    base_url: str, path: str, *, method: str = "GET", headers: dict[str, str] | None = None
-) -> tuple[int, dict[str, str], bytes]:
-    parsed = urllib.parse.urlsplit(base_url)
-    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=10)
-    try:
-        connection.request(method, path, headers=headers or {})
-        response = connection.getresponse()
-        body = response.read()
-        return (
-            response.status,
-            {name.lower(): value for name, value in response.getheaders()},
-            body,
-        )
-    finally:
-        connection.close()
-
-
-def cache_header_checks(
-    base_url: str, policy: site_cache.CachePolicy, asset_paths: list[str]
-) -> list[str]:
-    failures: list[str] = []
-    status, headers, _ = request_headers(base_url, "/")
-    if status != 200:
-        failures.append(f"/: expected 200, got {status}")
-    if headers.get("cache-control") != policy.html:
-        failures.append(
-            f"/: Cache-Control {headers.get('cache-control')!r} != {policy.html!r}"
-        )
-    if "immutable" in headers.get("cache-control", ""):
-        failures.append("/: HTML must not be immutable")
-    if not headers.get("etag") and not headers.get("last-modified"):
-        failures.append("/: HTML has no ETag or Last-Modified validator")
-    etag = headers.get("etag")
-    if etag:
-        conditional, conditional_headers, conditional_body = request_headers(
-            base_url, "/", headers={"If-None-Match": etag}
-        )
-        if conditional != 304:
-            failures.append(f"/: conditional request returned {conditional}, expected 304")
-        if conditional_body:
-            failures.append("/: conditional request returned a body")
-        if "immutable" in conditional_headers.get("cache-control", ""):
-            failures.append("/: conditional HTML must not be immutable")
-
-    status, headers, _ = request_headers(base_url, STATUS_PATH)
-    if status != 200:
-        failures.append(f"{STATUS_PATH}: expected 200, got {status}")
-    if headers.get("cache-control") != policy.status:
-        failures.append(
-            f"{STATUS_PATH}: Cache-Control {headers.get('cache-control')!r} "
-            f"!= {policy.status!r}"
-        )
-    if "no-store" not in headers.get("cache-control", ""):
-        failures.append(f"{STATUS_PATH}: must stay no-store")
-
-    if not asset_paths:
-        failures.append("no content-hashed asset was requested")
-    for path in sorted(set(asset_paths)):
-        status, headers, _ = request_headers(base_url, path, method="HEAD")
-        if status != 200:
-            failures.append(f"{path}: expected 200, got {status}")
-            continue
-        value = headers.get("cache-control", "")
-        if value != policy.hashed:
-            failures.append(f"{path}: Cache-Control {value!r} != {policy.hashed!r}")
-        if "immutable" not in value:
-            failures.append(f"{path}: content-hashed asset is not immutable")
-        if policy.immutable_min_max_age < 31536000:
-            failures.append(f"{path}: immutable max-age is shorter than one year")
-    return failures
 
 
 def positions(page) -> dict:
@@ -329,8 +242,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--hold-ms must be between 0 and 2999")
     root = args.root.resolve()
     try:
-        policy = site_cache.load(root)
-    except site_cache.PolicyError as exc:
+        contract = platform_contract.artifact_contract()
+    except platform_contract.ContractError as exc:
         print(f"cls-check: {exc}", file=sys.stderr)
         return 1
     try:
@@ -344,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    server = SiteServer(root, policy)
+    server = SiteServer(root)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     failures: list[str] = []
@@ -398,14 +311,13 @@ def main(argv: list[str] | None = None) -> int:
                     hashed = [
                         path
                         for path in resources
-                        if policy.hashed_pattern.search(path)
+                        if contract.is_content_hashed(path)
                     ]
-                    failures.extend(
-                        f"{label}: {failure}"
-                        for failure in cache_header_checks(
-                            server.base_url, policy, hashed
+                    if not hashed:
+                        failures.append(
+                            f"{label}: no platform-contract content-hashed asset "
+                            "was requested"
                         )
-                    )
                     print(
                         f"{label}: CLS {cls['cls']:.4f}; "
                         f"hero {before['hero']['top']} -> {after['hero']['top']}, "
@@ -414,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
                         f"board {before['board']['top']} -> {after['board']['top']}, "
                         f"vitals {'visible' if not before['vitalsHidden'] else 'hidden'}, "
                         f"banner {'visible' if not before['bannerHidden'] else 'hidden'}, "
-                        f"{len(set(hashed))} hashed assets immutable"
+                        f"{len(set(hashed))} content-hashed assets"
                     )
                     if cls["shifts"]:
                         print(
