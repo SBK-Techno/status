@@ -418,10 +418,21 @@ class GateContractTest(unittest.TestCase):
         for repository, secret in credentials.items():
             with self.subTest(repository=repository):
                 body = checkouts[repository]
+                input_name = secret.lower()
                 self.assertIn(
-                    f"ssh-key: ${{{{ secrets.{secret} }}}}",
+                    f"{input_name}:",
+                    self.toolchain,
+                    f"the composite action must declare the {input_name} input",
+                )
+                self.assertIn(
+                    f"ssh-key: ${{{{ inputs.{input_name} }}}}",
                     body,
-                    f"{repository} is private and needs the {secret} read key",
+                    f"{repository} must read its deploy key from the composite input",
+                )
+                self.assertIn(
+                    f"{input_name}: ${{{{ secrets.{secret} }}}}",
+                    self.validate,
+                    f"the workflow must pass {secret} to the composite action",
                 )
                 self.assertIsNone(
                     re.search(r"(?m)^\s+(?:token|password):", body),
