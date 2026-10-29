@@ -17,6 +17,7 @@ import threading
 import unittest
 import urllib.parse
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -24,7 +25,6 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import heartbeat_signature
 import site_build
 import verify_published
 
@@ -34,8 +34,7 @@ REQUIRED_CHECKS = {
     "local-build",
     "status-live",
     "status-schema",
-    "status-artifact",
-    "status-signature",
+    "status-freshness",
     "pages-live",
     "page-artifact",
     "page-assets",
@@ -105,6 +104,21 @@ class FixtureHandler(BaseHTTPRequestHandler):
         return
 
 
+def live_document(seed: bytes) -> bytes:
+    """Return a fresh heartbeat document for the fixture origin.
+
+    The real publisher writes a fresh document beside the release tree while
+    the committed seed stays unbounded. The fixture serves that live shape, so
+    the default origin passes the freshness check without changing the built
+    page's snapshot binding.
+    """
+    document = json.loads(seed)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    document["generated_at"] = f"{now:%Y-%m-%dT%H:%M:%SZ}"
+    document["expires_at"] = f"{now + timedelta(minutes=5):%Y-%m-%dT%H:%M:%SZ}"
+    return (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
 class FixtureSite:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -122,7 +136,7 @@ class FixtureSite:
             )
         self.add(
             "/status.json",
-            plan.status_bytes,
+            live_document(plan.status_bytes),
             "application/json; charset=utf-8",
         )
         for asset in plan.assets.values():
@@ -232,12 +246,13 @@ class VerifyPublishedTest(unittest.TestCase):
         report = self.verify()
         self.assert_check_fails(report, "page-assets", "404")
 
-    def test_stale_digest_fails_the_snapshot_and_binding(self) -> None:
+    def test_a_changed_live_document_keeps_the_built_snapshot(self) -> None:
         route = self.server.site.routes["/status.json"]
         route.body = route.body + b" "
         report = self.verify()
-        self.assert_check_fails(report, "snapshot", "digest")
-        self.assert_check_fails(report, "status-artifact", "differs")
+        self.assertTrue(report.ok, verify_published.render(report))
+        self.assert_check_passes(report, "status-freshness")
+        self.assert_check_passes(report, "snapshot")
 
     def test_schema_version_is_enforced(self) -> None:
         document = json.loads(self.plan.status_bytes)
@@ -248,17 +263,39 @@ class VerifyPublishedTest(unittest.TestCase):
         report = self.verify()
         self.assert_check_fails(report, "status-schema", "version")
 
-    def test_bad_signature_fails_and_no_key_is_printed(self) -> None:
-        key = b"fixture-signing-key"
-        good = heartbeat_signature.sign(self.plan.status_bytes, key)
-        passed = self.verify(signature=good, hmac_key=key)
-        self.assertTrue(passed.ok, verify_published.render(passed))
-        self.assert_check_passes(passed, "status-signature")
-        self.assertNotIn(key.decode("utf-8"), verify_published.render(passed))
+    def test_a_stale_live_document_fails_freshness(self) -> None:
+        document = json.loads(self.server.site.routes["/status.json"].body)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        document["generated_at"] = f"{now - timedelta(minutes=20):%Y-%m-%dT%H:%M:%SZ}"
+        document["expires_at"] = f"{now - timedelta(minutes=5):%Y-%m-%dT%H:%M:%SZ}"
+        self.server.site.routes["/status.json"].body = (
+            json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        report = self.verify()
+        self.assert_check_fails(report, "status-freshness", "expired")
 
-        failed = self.verify(signature="0" * 64, hmac_key=key)
-        self.assert_check_fails(failed, "status-signature", "mismatch")
-        self.assertNotIn(key.decode("utf-8"), verify_published.render(failed))
+    def test_a_future_live_document_fails_the_schema(self) -> None:
+        document = json.loads(self.server.site.routes["/status.json"].body)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        document["generated_at"] = f"{now + timedelta(minutes=10):%Y-%m-%dT%H:%M:%SZ}"
+        document["expires_at"] = f"{now + timedelta(minutes=15):%Y-%m-%dT%H:%M:%SZ}"
+        self.server.site.routes["/status.json"].body = (
+            json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        report = self.verify()
+        self.assert_check_fails(report, "status-schema", "future")
+
+    def test_tampered_page_digest_fails_the_snapshot(self) -> None:
+        route = self.server.site.routes["/"]
+        page = route.body.decode("utf-8")
+        approved = f'data-status-digest="{self.plan.digest}"'
+        self.assertIn(approved, page)
+        zeros = "0" * 64
+        route.body = page.replace(
+            approved, f'data-status-digest="{zeros}"', 1
+        ).encode("utf-8")
+        report = self.verify()
+        self.assert_check_fails(report, "snapshot", "digest")
 
     def test_304_with_a_body_fails(self) -> None:
         self.server.site.routes["/"].conditional_body = b"oops"
