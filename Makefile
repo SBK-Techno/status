@@ -21,13 +21,19 @@ VERIFY_PUBLISHED_FLAGS ?=
 PLATFORM_DIR := $(abspath $(PLATFORM))
 BRAND_DIR := $(abspath $(BRAND))
 
+# The Python build reads the platform contract through platform_contract.py.
+# Export the resolved checkouts so `make validate PLATFORM=...` reaches the
+# scripts exactly like the default `.toolchain` symlinks do.
+export PLATFORM
+export PLATFORM_DIR
+
 # The single definition of the local gate. CI runs `make validate`; neither
 # workflow keeps a second list of checks. scripts/ci_contract_test.py proves
 # that the workflow still delegates here and that the pinned toolchain refs
 # stay full commit SHAs.
-GATE_TARGETS := status-check test contract brand-check render-check edge-check assets-check statuscheck governance-check actionlint hook hook-check lint
+GATE_TARGETS := status-check test contract brand-check render-check artifact-check assets-check statuscheck governance-check actionlint hook hook-check lint
 
-.PHONY: $(GATE_TARGETS) hooks brand prune publish-check toolchain-check validate verify-published edge cls-check
+.PHONY: $(GATE_TARGETS) hooks brand prune publish-check toolchain-check validate verify-published artifact cls-check
 
 # The platform owns the brand assets; this repository owns the rendered
 # pages and their publish-time snapshot. `-brand-only` stops genstatus from
@@ -37,7 +43,6 @@ GATE_TARGETS := status-check test contract brand-check render-check edge-check a
 brand: toolchain-check
 	cd "$(PLATFORM_DIR)" && $(GO) run ./cmd/genstatus -root "$(STATUS_ROOT)" -brand "$(BRAND_DIR)" -brand-only
 	$(MAKE) --no-print-directory render
-	$(MAKE) --no-print-directory edge
 	$(MAKE) --no-print-directory prune
 
 toolchain-check:
@@ -98,13 +103,17 @@ render:
 render-check:
 	python3 scripts/build_site.py --root "$(STATUS_ROOT)" --check
 
-# The cache policy is owned by deploy/cache-policy.json. The edge config is
-# generated from it, and the browser check serves the same declarations.
-edge:
-	python3 scripts/render_edge_config.py --root "$(STATUS_ROOT)" --write
+# The platform owns the artifact layout, and its deploy validator owns the
+# published file set. `artifact` is the one entry point that writes the exact
+# tree `scripts/deploy/status.sh --dist` consumes; it never writes status.json,
+# which the publisher serves beside the release.
+DIST ?= $(STATUS_ROOT)/dist
 
-edge-check:
-	python3 scripts/render_edge_config.py --root "$(STATUS_ROOT)" --check
+artifact: toolchain-check brand
+	python3 scripts/artifact_build.py --root "$(STATUS_ROOT)" --out "$(DIST)" --platform "$(PLATFORM_DIR)"
+
+artifact-check: toolchain-check
+	python3 scripts/artifact_build.py --root "$(STATUS_ROOT)" --check --platform "$(PLATFORM_DIR)"
 
 # Local browser gate, not part of `make validate`: it needs Playwright and a
 # Chromium download, which CI deliberately does not install.
@@ -134,9 +143,10 @@ publish-check:
 
 # Verify the deployed origin against the committed build. This is a
 # post-publish step, not a commit gate: it needs the network and the live
-# site, and CI is billing-blocked, so run it locally after Pages deploys.
-verify-published:
-	@test -n "$(URL)" || { echo "verify-published: set URL=https://status.ia.sbktechno.com/" >&2; exit 2; }
+# site, and CI is billing-blocked, so run it locally after the platform edge
+# deploy.
+verify-published: toolchain-check
+	@test -n "$(URL)" || { echo "verify-published: set URL to the deployed status origin" >&2; exit 2; }
 	python3 scripts/verify_published.py --root "$(STATUS_ROOT)" --url "$(URL)" $(if $(SIGNATURE),--signature "$(SIGNATURE)") $(if $(HMAC_KEY_FILE),--hmac-key-file "$(HMAC_KEY_FILE)") $(VERIFY_PUBLISHED_FLAGS)
 
 validate: $(GATE_TARGETS)

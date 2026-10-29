@@ -28,6 +28,7 @@ VALIDATOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VALIDATOR)
 
 import prune_assets
+import platform_contract
 import site_build
 import status_snapshot
 
@@ -79,7 +80,9 @@ def repository_csp() -> str:
 def page_for(document: dict, now: datetime) -> tuple[str, bytes]:
     """Build a realistic page carrying the snapshot for one fixture."""
     status_bytes = json.dumps(document, ensure_ascii=False).encode("utf-8")
-    region = status_snapshot.render_snapshot_region(document, now)
+    region = status_snapshot.render_snapshot_region(
+        document, now, platform_contract.status_host()
+    )
     page = site_build.replace_snapshot_region(
         repository_page("index.html"),
         "\n" + region.strip("\n") + "\n    ",
@@ -126,8 +129,6 @@ def temp_copy() -> tempfile.TemporaryDirectory:
         "brand.manifest.json",
         "site.manifest.json",
         "asset-retention.json",
-        "CNAME",
-        ".nojekyll",
     ):
         shutil.copyfile(ROOT / name, destination / name)
     shutil.copytree(ROOT / "templates", destination / "templates")

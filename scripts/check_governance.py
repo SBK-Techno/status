@@ -22,6 +22,8 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
+import git_environment
+
 ROOT = Path(__file__).resolve().parent.parent
 ACTION = ROOT / ".github" / "actions" / "toolchain" / "action.yml"
 PLATFORM_REPOSITORY = "SBK-Techno/platform"
@@ -77,16 +79,24 @@ def verify_checkout(platform: Path, pin: str) -> None:
         )
     if not (platform / "cmd" / "genguides").is_dir():
         fail(f"{platform} has no cmd/genguides; check out the pinned platform revision")
-    inside = run(["git", "-C", str(platform), "rev-parse", "--is-inside-work-tree"], platform)
+    inside = git_environment.run_git(
+        platform, "rev-parse", "--is-inside-work-tree", text=True
+    )
     if inside.returncode != 0 or inside.stdout.strip() != "true":
         fail(f"{platform} is not a Git work tree; check out {PLATFORM_REPOSITORY} at {pin}")
-    head = run(["git", "-C", str(platform), "rev-parse", "HEAD"], platform)
+    head = git_environment.run_git(platform, "rev-parse", "HEAD", text=True)
     if head.returncode != 0:
         fail(f"cannot read the platform revision: {head.stderr.strip()}")
     found = head.stdout.strip()
     if found != pin:
         fail(f"platform checkout is at {found}, but the action pin is {pin}")
-    status = run(["git", "-C", str(platform), "status", "--porcelain", "--untracked-files=all"], platform)
+    status = git_environment.run_git(
+        platform,
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        text=True,
+    )
     if status.returncode != 0:
         fail(f"cannot read the platform status: {status.stderr.strip()}")
     if status.stdout.strip():

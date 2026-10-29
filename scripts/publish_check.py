@@ -3,8 +3,10 @@
 
 Run after ``make brand``. The comparison base is the published commit (``HEAD``
 by default) and the publish surface is every file a publish may write: the
-document, the rendered pages, both generated manifests, the generated edge
-config, the retention ledger, and the content-hashed brand and site assets.
+document, the rendered pages, both generated manifests, the retention ledger,
+and the content-hashed brand and site assets. The platform edge, its Caddy
+configuration, its cache policy, and its deploy scripts are not part of this
+repository.
 
 Exit codes:
 
@@ -33,6 +35,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import git_environment
 import prune_assets
 import site_build
 
@@ -55,7 +58,6 @@ INDEX_FILES = (
     "404.html",
     site_build.SITE_MANIFEST,
     "brand.manifest.json",
-    "deploy/Caddyfile",
     prune_assets.LEDGER,
 )
 GIT_TIMEOUT = 60
@@ -109,21 +111,16 @@ def is_publish_path(name: str) -> bool:
         return True
     parts = name.split("/")
     if len(parts) == 1:
-        return prune_assets.GENERATED_ASSET.fullmatch(name) is not None
+        return prune_assets.is_generated_asset(name)
     return (
         len(parts) == 2
         and parts[0] == "assets"
-        and prune_assets.GENERATED_ASSET.fullmatch(parts[1]) is not None
+        and prune_assets.is_generated_asset(parts[1])
     )
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        ["git", "-C", str(root), *args],
-        check=False,
-        capture_output=True,
-        timeout=GIT_TIMEOUT,
-    )
+    return git_environment.run_git(root, *args, timeout=GIT_TIMEOUT)
 
 
 def resolve_base(root: Path, base: str) -> str | None:

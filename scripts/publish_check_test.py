@@ -17,6 +17,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import git_environment
 import prune_assets
 import publish_check
 import site_build
@@ -57,11 +58,8 @@ class Fixture:
         self._temporary.cleanup()
 
     def git(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", "-C", str(self.root), *args],
-            check=True,
-            capture_output=True,
-            text=True,
+        return git_environment.run_git(
+            self.root, *args, check=True, text=True
         )
 
     def document(self) -> dict:

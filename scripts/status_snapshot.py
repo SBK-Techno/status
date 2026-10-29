@@ -431,8 +431,12 @@ def _vitals_markup(vitals: dict) -> str:
         </div>"""
 
 
-def render_snapshot_region(document: dict, now: datetime) -> str:
-    """Render the complete status region that replaces the template fallback."""
+def render_snapshot_region(document: dict, now: datetime, host: str) -> str:
+    """Render the complete status region that replaces the template fallback.
+
+    ``host`` is the public status host from the platform naming standard; the
+    status repository never keeps a second copy of the DNS name.
+    """
     state = snapshot_state(document, now)
     generated = state["generated"]
     signal_html = (
@@ -487,7 +491,7 @@ def render_snapshot_region(document: dict, now: datetime) -> str:
       <div class="sbk-shell hero__inner">
         <div class="hero__rail">
           <p class="eyebrow"><span class="eyebrow__index" aria-hidden="true">01</span> <span data-i18n="overallEyebrow">État général</span></p>
-          <p class="hero__host">status.ia.sbktechno.com</p>
+          <p class="hero__host">{html.escape(host, quote=False)}</p>
         </div>
 
         <div class="hero__copy">

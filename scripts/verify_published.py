@@ -19,10 +19,12 @@ signature. The published contract is:
   matches its recorded SHA-256, size, and media type. Fonts referenced by the
   brand stylesheet are checked the same way. Asset names come from the build
   output, never from a list in this module.
-* HTML revalidates within the limit declared by ``deploy/cache-policy.json``
-  with a validator, a conditional request returns 304 with no body,
-  content-hashed assets are immutable by URL (and by header on a controllable
-  edge), no response sets a cookie, and a directory path is not a listing.
+* A conditional request returns 304 with no body, no response sets a cookie,
+  and a directory path is not a listing.
+
+The edge owns every response-header and cache decision. The platform Caddyfile
+declares them, and the platform's edge tests prove them; this command does not
+keep a second header list or cache policy.
 """
 
 from __future__ import annotations
@@ -43,7 +45,6 @@ from pathlib import Path
 
 import heartbeat_signature
 import site_build
-import site_cache
 import validate_status
 from status_snapshot import document_digest, parse_timestamp
 
@@ -133,7 +134,6 @@ class Plan:
     assets: dict[str, Asset]
     snapshot_at: str
     digest: str
-    cache_policy: site_cache.CachePolicy
 
 
 @dataclass(frozen=True)
@@ -288,17 +288,6 @@ def media_type_matches(expected: str, actual: str | None) -> bool:
     return actual_base in MEDIA_ALIASES.get(expected_base, set())
 
 
-def cache_directives(value: str) -> dict[str, str | None]:
-    directives: dict[str, str | None] = {}
-    for part in value.split(","):
-        name, separator, raw = part.strip().partition("=")
-        key = name.strip().lower()
-        if not key:
-            continue
-        directives[key] = raw.strip().strip('"') if separator else None
-    return directives
-
-
 def content_hash_matches(file: str, sha256: str) -> bool:
     return sha256[:12] in CONTENT_HASH_SEGMENT.findall(file)
 
@@ -376,10 +365,8 @@ def build_plan(root: Path) -> Plan:
         site_manifest = site_build.load_site_manifest(root)
         brand_manifest = site_build.load_brand_manifest(root)
         status_bytes = (root / "status.json").read_bytes()
-        cache_policy = site_cache.load(root)
     except (
         site_build.BuildError,
-        site_cache.PolicyError,
         OSError,
         json.JSONDecodeError,
     ) as exc:
@@ -455,7 +442,6 @@ def build_plan(root: Path) -> Plan:
         assets=assets,
         snapshot_at=snapshot_at,
         digest=digest,
-        cache_policy=cache_policy,
     )
 
 
@@ -628,13 +614,11 @@ class Verifier:
         hmac_key: bytes | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         max_bytes: int = DEFAULT_MAX_BYTES,
-        host_policy: str = "auto",
     ) -> None:
         self.root = root
         self.base = base
         self.signature = signature
         self.hmac_key = hmac_key
-        self.host_policy = host_policy
         self.client = HttpClient(timeout=timeout, max_bytes=max_bytes)
         self.results: list[CheckResult] = []
         self.cache: dict[tuple, Response] = {}
@@ -662,9 +646,7 @@ class Verifier:
         self._asset_integrity()
         self._asset_transitive()
         self._snapshot(status, pages)
-        self._html_cache(pages)
         self._conditional(pages)
-        self._asset_cache()
         self._no_listing()
         self._no_cookie()
         return self._report()
@@ -1034,51 +1016,10 @@ class Verifier:
                 f"digest {live_digest[:12]} and instant {live_at} agree",
             )
 
-    def _html_cache(self, pages: dict[str, Response]) -> None:
-        if not pages:
-            self._skip("cache-html", "the live pages were not fetched")
-            return
-        assert self.plan is not None
-        policy = self.plan.cache_policy
-        failures: list[str] = []
-        for name, response in pages.items():
-            path = PAGE_PATHS[name]
-            value = response.header("cache-control")
-            if not value:
-                failures.append(f"{path}: missing Cache-Control")
-                continue
-            directives = cache_directives(value)
-            if "no-store" in directives or "private" in directives:
-                failures.append(f"{path}: Cache-Control must be publicly cacheable")
-            if "immutable" in directives:
-                failures.append(f"{path}: HTML must not be immutable")
-            raw_age = directives.get("max-age")
-            if raw_age is None:
-                failures.append(f"{path}: Cache-Control has no max-age")
-            else:
-                try:
-                    age = int(raw_age)
-                except ValueError:
-                    failures.append(f"{path}: max-age is not an integer")
-                else:
-                    if age < 0 or age > policy.html_max_age:
-                        failures.append(
-                            f"{path}: max-age {age} exceeds {policy.html_max_age}"
-                        )
-            if not (response.header("etag") or response.header("last-modified")):
-                failures.append(f"{path}: no ETag or Last-Modified validator")
-        if failures:
-            self._fail("cache-html", "; ".join(failures))
-        else:
-            self._pass(
-                "cache-html",
-                f"max-age <= {policy.html_max_age} and a validator on both pages",
-            )
-
     def _conditional(self, pages: dict[str, Response]) -> None:
         response = pages.get("index.html")
         if response is None:
-            self._skip("cache-conditional", "index.html was not fetched")
+            self._skip("http-conditional", "index.html was not fetched")
             return
         conditional: dict[str, str] = {}
         etag = response.header("etag")
@@ -1089,7 +1030,7 @@ class Verifier:
             conditional["If-Modified-Since"] = modified
         else:
             self._fail(
-                "cache-conditional",
+                "http-conditional",
                 "index.html has no ETag or Last-Modified to revalidate",
             )
             return
@@ -1098,108 +1039,27 @@ class Verifier:
                 "/", limit=HTML_MAX_BYTES, conditional=conditional
             )
         except FetchError as exc:
-            self._fail("cache-conditional", str(exc))
+            self._fail("http-conditional", str(exc))
             return
         if revalidated.status != 304:
             self._fail(
-                "cache-conditional",
+                "http-conditional",
                 f"conditional request returned {revalidated.status}, expected 304",
             )
             return
         declared = revalidated.header("content-length")
         if revalidated.body:
             self._fail(
-                "cache-conditional",
+                "http-conditional",
                 f"304 carried {len(revalidated.body)} body bytes",
             )
         elif declared is not None and declared.strip() not in ("", "0"):
             self._fail(
-                "cache-conditional",
+                "http-conditional",
                 f"304 declared Content-Length {declared}",
             )
         else:
-            self._pass("cache-conditional", "304 with an empty body")
-
-    def _asset_cache(self) -> None:
-        if self.plan is None:
-            self._skip("cache-assets", "the local build is unavailable")
-            return
-        policy = self.plan.cache_policy
-        github_pages = self.host_policy == "github-pages" or (
-            self.host_policy == "auto"
-            and any(self._is_github_pages(response) for response in self.fetched)
-        )
-        failures: list[str] = []
-        for asset in self.plan.assets.values():
-            try:
-                response = self._fetch_asset(asset)
-            except FetchError:
-                continue
-            if response.status != 200:
-                continue
-            value = response.header("cache-control")
-            if not value:
-                failures.append(f"{asset.path}: missing Cache-Control")
-                continue
-            directives = cache_directives(value)
-            if (
-                "no-store" in directives
-                or "private" in directives
-                or "no-cache" in directives
-            ):
-                failures.append(
-                    f"{asset.path}: content-hashed asset must not be private "
-                    "or revalidated on every request"
-                )
-                continue
-            raw_age = directives.get("max-age")
-            age: int | None = None
-            if raw_age is not None:
-                try:
-                    age = int(raw_age)
-                except ValueError:
-                    failures.append(f"{asset.path}: max-age is not an integer")
-                    continue
-            if "immutable" in directives:
-                if age is None or age < policy.immutable_min_max_age:
-                    failures.append(
-                        f"{asset.path}: immutable requires max-age >= "
-                        f"{policy.immutable_min_max_age}"
-                    )
-                continue
-            if github_pages:
-                if age is None or age < 0 or age > policy.html_max_age:
-                    failures.append(
-                        f"{asset.path}: GitHub Pages max-age must be between "
-                        f"0 and {policy.html_max_age}"
-                    )
-                continue
-            failures.append(
-                f"{asset.path}: expected immutable with max-age >= "
-                f"{policy.immutable_min_max_age} on this origin"
-            )
-        if failures:
-            self._fail("cache-assets", "; ".join(failures[:5]))
-        elif github_pages:
-            self._pass(
-                "cache-assets",
-                f"{len(self.plan.assets)} content-hashed URLs; GitHub Pages "
-                f"caps max-age at {policy.html_max_age} (immutable header unavailable)",
-            )
-        else:
-            self._pass(
-                "cache-assets",
-                f"{len(self.plan.assets)} content-hashed assets are immutable "
-                f"for at least {policy.immutable_min_max_age} seconds",
-            )
-
-    @staticmethod
-    def _is_github_pages(response: Response) -> bool:
-        server = (response.header("server") or "").lower()
-        return (
-            server.startswith("github.com")
-            or response.header("x-github-request-id") is not None
-        )
+            self._pass("http-conditional", "304 with an empty body")
 
     def _no_listing(self) -> None:
         paths = ("/assets/", "/assets", "/.git/")
@@ -1252,7 +1112,6 @@ def verify(
     hmac_key: bytes | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     max_bytes: int = DEFAULT_MAX_BYTES,
-    host_policy: str = "auto",
 ) -> Report:
     base = normalize_base(url)
     return Verifier(
@@ -1262,7 +1121,6 @@ def verify(
         hmac_key=hmac_key,
         timeout=timeout,
         max_bytes=max_bytes,
-        host_policy=host_policy,
     ).run()
 
 
@@ -1316,12 +1174,6 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_MAX_BYTES,
         help=f"total response budget (default: {DEFAULT_MAX_BYTES})",
     )
-    parser.add_argument(
-        "--host-policy",
-        choices=("auto", "github-pages", "edge"),
-        default="auto",
-        help="cache policy to require (default: detect GitHub Pages)",
-    )
     args = parser.parse_args(argv)
 
     try:
@@ -1358,7 +1210,6 @@ def main(argv: list[str] | None = None) -> int:
             hmac_key=key,
             timeout=args.timeout,
             max_bytes=args.max_bytes,
-            host_policy=args.host_policy,
         )
     except UsageError as exc:
         parser.error(str(exc))

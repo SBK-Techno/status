@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
+import platform_contract
 from status_snapshot import (
     document_digest,
     format_stamp,
@@ -39,6 +40,7 @@ CSP_FILE = "templates/csp.txt"
 DARK_SELECTOR = ':root[data-theme="dark"]'
 BRAND_PLACEHOLDER = re.compile(r"\{\{asset:([a-z0-9][a-z0-9.-]*)\}\}")
 SITE_PLACEHOLDER = re.compile(r"\{\{site:([a-z0-9][a-z0-9.-]*)\}\}")
+STATUS_HOST_PLACEHOLDER = re.compile(r"\{\{status:host\}\}")
 ANY_PLACEHOLDER = re.compile(r"\{\{[^}]+\}\}")
 BRAND_LINK = re.compile(r"^brand\.[0-9a-f]{12}\.css$")
 HEX_TOKEN = re.compile(r"(--sbk-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6});")
@@ -278,6 +280,7 @@ def render_pages(
     status_document: dict,
     site_assets: dict[str, dict],
     snapshot_at: str,
+    host: str,
 ) -> dict[str, str]:
     manifest = load_brand_manifest(root)
     csp = read_csp(root)
@@ -286,6 +289,7 @@ def render_pages(
     def common(text: str) -> str:
         text = resolve_brand_placeholders(text, manifest)
         text = resolve_site_placeholders(text, site_assets)
+        text = STATUS_HOST_PLACEHOLDER.sub(lambda _: host, text)
         text = text.replace("{{csp}}", csp)
         text = text.replace("{{snapshot:at}}", snapshot_at)
         text = text.replace("{{snapshot:digest}}", digest)
@@ -296,7 +300,7 @@ def render_pages(
     index = common(index_template)
     error = common(error_template)
     snapshot = render_snapshot_region(
-        status_document, parse_timestamp(snapshot_at)
+        status_document, parse_timestamp(snapshot_at), host
     )
     index = replace_snapshot_region(
         index, "\n" + snapshot.strip("\n") + "\n    "
@@ -319,7 +323,7 @@ def render_pages(
 
 
 def expected_site_outputs(
-    root: Path, snapshot_at: str | None = None
+    root: Path, snapshot_at: str | None = None, host: str | None = None
 ) -> dict[str, bytes]:
     status_path = root / "status.json"
     if not status_path.is_file():
@@ -331,7 +335,8 @@ def expected_site_outputs(
     manifest = load_brand_manifest(root)
     assets = site_asset_outputs(root, manifest)
     at = _select_snapshot_at(root, status_bytes, snapshot_at)
-    pages = render_pages(root, status_bytes, status_document, assets, at)
+    public_host = host or platform_contract.status_host()
+    pages = render_pages(root, status_bytes, status_document, assets, at, public_host)
     outputs: dict[str, bytes] = {
         "index.html": pages["index.html"].encode("utf-8"),
         "404.html": pages["404.html"].encode("utf-8"),
@@ -380,7 +385,7 @@ def check_site(root: Path) -> list[str]:
         return ["index.html: missing or invalid data-snapshot-at"]
     try:
         expected = expected_site_outputs(root, snapshot_at=snapshot_at)
-    except (BuildError, OSError, json.JSONDecodeError) as exc:
+    except (BuildError, OSError, json.JSONDecodeError, platform_contract.ContractError) as exc:
         return [str(exc)]
     errors: list[str] = []
     for name, data in sorted(expected.items()):
@@ -395,7 +400,7 @@ def check_site(root: Path) -> list[str]:
 def write_site(root: Path, snapshot_at: str | None = None) -> list[str]:
     try:
         expected = expected_site_outputs(root, snapshot_at=snapshot_at)
-    except (BuildError, OSError, json.JSONDecodeError) as exc:
+    except (BuildError, OSError, json.JSONDecodeError, platform_contract.ContractError) as exc:
         return [str(exc)]
     for name, data in sorted(expected.items()):
         path = root / name
@@ -409,13 +414,15 @@ def write_site(root: Path, snapshot_at: str | None = None) -> list[str]:
 
 
 def normalize_page(
-    page: str, template: str, site_assets: dict[str, dict], csp: str
+    page: str, template: str, site_assets: dict[str, dict], csp: str, host: str
 ) -> str:
     """Reverse the site transforms so genstatus can compare the brand stage."""
     normalized = page
     if SNAPSHOT_START in page and SNAPSHOT_START in template:
         template_region = extract_snapshot_region(template)
         normalized = replace_snapshot_region(normalized, template_region)
+    if host:
+        normalized = normalized.replace(host, "{{status:host}}")
     normalized = SNAPSHOT_ATTR.sub(
         'data-snapshot-at="{{snapshot:at}}"', normalized, count=1
     )
