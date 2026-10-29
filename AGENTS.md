@@ -4,7 +4,7 @@
 <!-- DO NOT EDIT. Change the platform source, then rerun make guides in SBK-Techno/platform. -->
 
 **Repository:** `SBK-Techno/status`
-**Purpose:** The public service status page, its signed heartbeat, and its publish path.
+**Purpose:** The public service status page source, its document schema, build, and validate-only CI.
 **Owner:** @SBK-Techno/owners
 
 ## Read first
@@ -67,7 +67,6 @@ every human-facing surface is French.
 - `make validate`
 - `make brand`
 - `make brand-check`
-- `make publish-check`
 - `make verify-published`
 
 
