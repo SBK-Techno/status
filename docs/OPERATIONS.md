@@ -14,7 +14,7 @@ section must link this page at the platform source.
 | Fact | Owner |
 | --- | --- |
 | Page templates, styles, scripts, French and English copy | this repository |
-| `status.json` schema, seed, and signed heartbeat input | this repository |
+| `status.json` schema and committed seed | this repository |
 | Hashed site assets, `site.manifest.json`, `asset-retention.json` | this repository build |
 | Brand assets and `brand.manifest.json` | SBK-Techno/brand through the platform generator |
 | Artifact file set, required names, content-hash shape | SBK-Techno/platform `scripts/deploy/status_artifact.py` |
@@ -145,28 +145,28 @@ published asset.
 
 ## Deploy and DNS
 
-The platform owns the deploy. Its `scripts/deploy/status.sh` builds the
+The platform owns the deploy and the edge. Its `scripts/deploy/status.sh` builds the
 deterministic tar from the manifests in this checkout, verifies the platform
 gate attestation, stages the host installer, swaps the release in one rename,
 verifies it, and restores the previous release on failure. `--rollback` is the
 only rollback path. GitHub Pages is no longer an owner or a fallback: the
 `CNAME`, `.nojekyll`, Caddyfile, cache policy, and Pages deployment were
-removed from this repository.
+removed from this repository. The DNS record points at the platform host and
+the platform Caddy block serves the site. The remaining operator step is to
+disable Pages for this repository and remove its custom domain, so the old
+Pages build cannot answer on a stale hostname; the platform documentation owns
+the exact command.
 
-The remaining operator step is outside this repository: point the
-`status.ia.sbktechno.com` DNS record at the platform host, remove the Pages
-custom domain, install the platform-generated Caddy block, and reload Caddy.
-The platform documentation owns the exact commands and the TLS/DNS cutover.
-
-## Post-publish check
+## Post-deploy check
 
 ```sh
 make verify-published URL=https://status.ia.sbktechno.com/
 ```
 
 This is read-only, bounded, and outside `make validate` because it needs the
-live origin. It binds the live `status.json` bytes to the committed document,
+live origin. It validates the live `status.json` schema and freshness, binds
 the pages to the built bytes, every referenced resource to its manifest digest,
-and the snapshot attributes to the live document. CI is billing-blocked, so run
-it after the platform deploy. It cannot prove the HMAC without the publish-run
-signature and key, and it does not assert edge headers, which the platform owns.
+and the snapshot attributes to the committed document the page was built from.
+CI is billing-blocked, so run it after the platform deploy. It does not assert
+the HMAC receipt or the edge headers; local publication and the edge belong to
+the platform.

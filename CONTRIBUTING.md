@@ -44,6 +44,5 @@ output, and the change has one owner per fact.
 - `make validate`
 - `make brand`
 - `make brand-check`
-- `make publish-check`
 - `make verify-published`
 

@@ -16,7 +16,7 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: SBK-Techno/platform
-        ref: 205c9db5d123e7613068cdcee077dc16afed8a65
+        ref: 4a901b2239dc1806308a2553054c40d2f8a705ec
         path: .toolchain/platform
         # SBK-Techno/platform is private. The repository secret holds a
         # read-only deploy key; no credential lives in this checkout.

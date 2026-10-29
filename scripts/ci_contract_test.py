@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Contract tests for the local gate and its CI delegation.
+"""Contract tests for the validate-only gate and the local publication split.
 
-The Makefile owns the list of checks. The workflows may prepare the pinned
-toolchain and invoke the gate, but they must not keep a private list or inline
-a copy of a check. These tests parse the real files, so the contract cannot
-drift silently.
+The Makefile owns the list of checks. The single workflow may prepare the
+pinned toolchain and invoke the gate, but it must not keep a private list or
+inline a copy of a check. These tests parse the real files, so the contract
+cannot drift silently.
+
+The platform host publishes the live status document and its signed receipt
+locally. This repository validates the page source, the document, and the
+build; it must never grow a dispatch workflow, a repository write, a GitHub
+token, or an HMAC verification path of its own.
 """
 
 from __future__ import annotations
@@ -16,13 +21,45 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MAKEFILE = ROOT / "Makefile"
 OPERATIONS = ROOT / "docs" / "OPERATIONS.md"
-VALIDATE_WORKFLOW = ROOT / ".github" / "workflows" / "validate.yml"
-PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
+WORKFLOW_DIR = ROOT / ".github" / "workflows"
+VALIDATE_WORKFLOW = WORKFLOW_DIR / "validate.yml"
 TOOLCHAIN_ACTION = ROOT / ".github" / "actions" / "toolchain" / "action.yml"
+SCRIPT_DIR = ROOT / "scripts"
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 ACTION_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 STEP = re.compile(r"(?m)^( +)- name:\s*(.+?)\s*$")
+
+# The publication path this repository must not carry. Each value is assembled
+# from fragments so this test file does not match its own scan.
+DEAD_REFERENCES = tuple(
+    "".join(parts)
+    for parts in (
+        ("status-", "dispatch-token"),
+        ("status-", "heartbeat-hmac"),
+        ("STATUS_HEARTBEAT_", "HMAC"),
+        ("heartbeat_", "signature"),
+        ("verify_", "heartbeat"),
+        ("publish_", "check"),
+        ("publish", "-check"),
+        ("publish", ".yml"),
+        ("GITHUB_", "TOKEN"),
+        ("GH_", "TOKEN"),
+        ("contents: ", "write"),
+        ("actions: ", "write"),
+        ("git ", "push"),
+    )
+)
+DEAD_SCRIPTS = tuple(
+    "".join(parts) + ".py"
+    for parts in (
+        ("publish_", "check"),
+        ("publish_", "check_test"),
+        ("verify_", "heartbeat"),
+        ("heartbeat_", "signature"),
+        ("heartbeat_", "signature_test"),
+    )
+)
 
 
 def read(path: Path) -> str:
@@ -86,11 +123,28 @@ def run_steps(text: str) -> list[tuple[str, str]]:
     return commands
 
 
+def scanned_files() -> list[Path]:
+    """The executable and operational surfaces that could reintroduce the path.
+
+    The generated governance files are owned by the pinned platform checkout
+    and verified byte for byte by `make governance-check`; they are regenerated
+    when the pin advances, not edited here.
+    """
+    files = [
+        MAKEFILE,
+        OPERATIONS,
+        *sorted(WORKFLOW_DIR.glob("*.y*ml")),
+        *sorted(SCRIPT_DIR.glob("*.py")),
+        *sorted(SCRIPT_DIR.glob("*.sh")),
+        *sorted(SCRIPT_DIR.glob("*.mjs")),
+    ]
+    return [path for path in files if path.is_file()]
+
+
 class GateContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.makefile = read(MAKEFILE)
         self.validate = read(VALIDATE_WORKFLOW)
-        self.publish = read(PUBLISH_WORKFLOW)
         self.toolchain = read(TOOLCHAIN_ACTION)
 
     # Makefile ---------------------------------------------------------
@@ -191,6 +245,21 @@ class GateContractTest(unittest.TestCase):
             make_recipe(self.makefile, "prune"),
         )
 
+    def test_the_publish_decision_helper_is_gone(self) -> None:
+        targets = make_variable(self.makefile, "GATE_TARGETS").split()
+        dead_target = "".join(("publish", "-check"))
+        self.assertNotIn(dead_target, targets)
+        self.assertNotRegex(
+            self.makefile,
+            rf"(?m)^{re.escape(dead_target)}:",
+            "the publish decision belonged to the dead dispatch workflow",
+        )
+        self.assertNotIn("PUBLISH_BASE", self.makefile)
+        self.assertNotIn("PUBLISH_DECISION_FILE", self.makefile)
+        for name in DEAD_SCRIPTS:
+            with self.subTest(removed=name):
+                self.assertFalse((SCRIPT_DIR / name).exists(), f"{name} is dead")
+
     # CI delegation ----------------------------------------------------
 
     def test_validate_workflow_only_calls_the_make_gate(self) -> None:
@@ -213,120 +282,36 @@ class GateContractTest(unittest.TestCase):
         self.assertIn("github.ref", match.group(1))
         self.assertIn("github.event_name == 'pull_request'", match.group(2))
 
-    def test_publish_rebuilds_prunes_and_validates_before_commit(self) -> None:
-        commands = run_steps(self.publish)
-        brand = next(i for i, command in enumerate(commands) if command[1] == "make brand")
-        decision = next(
-            i
-            for i, command in enumerate(commands)
-            if command[1].startswith("make publish-check")
+    def test_only_the_validate_workflow_exists(self) -> None:
+        workflows = sorted(
+            path.name
+            for path in WORKFLOW_DIR.iterdir()
+            if path.is_file() and path.suffix in {".yml", ".yaml"}
         )
-        validate = next(
-            i for i, command in enumerate(commands) if command[1] == "make validate"
-        )
-        commit = next(
-            i for i, command in enumerate(commands) if "git push" in command[1]
-        )
-        self.assertLess(brand, decision, "the tree must be rebuilt before the decision")
-        self.assertLess(decision, validate, "the gate must follow the decision")
-        self.assertLess(validate, commit, "nothing may be committed before the gate")
-        self.assertIn("uses: ./.github/actions/toolchain", self.publish)
-        self.assertIn("STATUS_HEARTBEAT_HMAC", self.publish)
-        self.assertIn("permissions:\n  contents: write", self.publish)
-        self.assertIn("cancel-in-progress: false", self.publish)
-
-        workflow_steps = {name: body for name, body, _ in steps(self.publish)}
-        verification = workflow_steps["Verify the signed payload"]
-        combined = "\n".join(command for _, command in commands)
-        self.assertIn(
-            "python3 scripts/verify_heartbeat.py --out status.json",
-            combined,
-            "publish must use the shared heartbeat verifier",
-        )
-        self.assertNotIn(
-            "import hmac",
-            combined,
-            "the HMAC contract must stay in scripts/heartbeat_signature.py",
-        )
-        for variable in ("STATUS_HEARTBEAT_HMAC", "PAYLOAD", "SIGNATURE"):
-            self.assertIn(
-                variable,
-                verification,
-                f"the signed payload step must pass {variable}",
-            )
-
-        for duplicated in (
-            "scripts/build_site.py",
-            "scripts/validate_status.py",
-            "scripts/prune_assets.py",
-            "scripts/publish_check.py",
-            "go run ./cmd/",
-            "validate_document",
-        ):
-            with self.subTest(duplicated=duplicated):
-                self.assertNotIn(
-                    duplicated,
-                    combined,
-                    "publish must delegate to the same Make targets as CI",
-                )
-        self.assertIn("chore(status): publish signed heartbeat", combined)
-
-    def test_publish_check_owns_the_noop_decision(self) -> None:
-        targets = make_variable(self.makefile, "GATE_TARGETS").split()
-        self.assertNotIn(
-            "publish-check",
-            targets,
-            "publish-check compares against git history; the site gate must "
-            "stay reproducible from the working tree alone",
-        )
-        recipe = make_recipe(self.makefile, "publish-check")
-        self.assertIn(
-            'python3 scripts/publish_check.py --root "$(STATUS_ROOT)"', recipe
-        )
-        self.assertIn('--base "$(PUBLISH_BASE)"', recipe)
-        self.assertIn("--decision-file", recipe)
-
-        workflow_steps = {name: body for name, body, _ in steps(self.publish)}
-        decision = workflow_steps[
-            "Decide whether this heartbeat changes the published site"
-        ]
-        self.assertIn("make publish-check", decision)
-        self.assertIn('PUBLISH_DECISION_FILE="$GITHUB_OUTPUT"', decision)
-
-        for name in (
-            "Run the same validation gate as CI",
-            "Commit the heartbeat",
-        ):
-            with self.subTest(gated=name):
-                self.assertIn(
-                    "if: steps.publish.outputs.changed == 'true'",
-                    workflow_steps[name],
-                    f"{name} must only run for a real change",
-                )
-        self.assertNotIn(
-            "git diff --cached --quiet",
-            workflow_steps["Commit the heartbeat"],
-            "the commit step must not re-decide the no-op contract",
-        )
-
-    def test_publish_and_validate_share_the_gate_command(self) -> None:
-        validate_commands = [
-            command for _, command in run_steps(self.validate) if command.startswith("make ")
-        ]
-        publish_commands = [
-            command for _, command in run_steps(self.publish) if command.startswith("make ")
-        ]
-        self.assertEqual(validate_commands, ["make validate"])
         self.assertEqual(
-            publish_commands,
-            [
-                "make brand",
-                'make publish-check PUBLISH_DECISION_FILE="$GITHUB_OUTPUT"',
-                "make validate",
-            ],
+            workflows,
+            ["validate.yml"],
+            "publication is local; this repository has one validation workflow",
         )
 
-    def test_verify_published_is_a_documented_post_publish_step(self) -> None:
+    def test_no_dispatch_token_or_hmac_path_remains(self) -> None:
+        for name in DEAD_REFERENCES:
+            with self.subTest(absent=name):
+                self.assertNotIn(name, self.makefile)
+        for name in DEAD_SCRIPTS:
+            with self.subTest(absent_from_scripts=name):
+                self.assertFalse((SCRIPT_DIR / name).exists(), name)
+        for path in scanned_files():
+            text = read(path)
+            for token in DEAD_REFERENCES:
+                with self.subTest(file=path.name, token=token):
+                    self.assertNotIn(
+                        token,
+                        text,
+                        f"{path.name} still carries the dead publication path",
+                    )
+
+    def test_verify_published_is_a_documented_post_deploy_step(self) -> None:
         targets = make_variable(self.makefile, "GATE_TARGETS").split()
         self.assertNotIn(
             "verify-published",
@@ -339,18 +324,11 @@ class GateContractTest(unittest.TestCase):
             '--url "$(URL)"',
             recipe,
         )
-        self.assertIn('--signature "$(SIGNATURE)"', recipe)
-        self.assertIn('--hmac-key-file "$(HMAC_KEY_FILE)"', recipe)
+        self.assertNotIn("--signature", recipe)
+        self.assertNotIn("--hmac-key-file", recipe)
         self.assertNotIn("--write", recipe)
         self.assertIn("make verify-published URL=", read(OPERATIONS))
-        publish_commands = "\n".join(
-            command for _, command in run_steps(self.publish)
-        )
-        self.assertNotIn(
-            "verify-published",
-            publish_commands,
-            "the publish job cannot verify a deployment it has not created yet",
-        )
+        self.assertNotIn("verify-published", self.validate)
 
     # Pinned inputs ----------------------------------------------------
 
@@ -386,22 +364,21 @@ class GateContractTest(unittest.TestCase):
         )
         self.assertEqual(seen["SBK-Techno/platform"][0], ".toolchain/platform")
         self.assertEqual(seen["SBK-Techno/brand"][0], ".toolchain/brand")
-        for workflow in (self.validate, self.publish):
-            self.assertEqual(
-                workflow.count("uses: ./.github/actions/toolchain"),
-                1,
-                "both workflows must consume the pinned toolchain action",
-            )
-            self.assertNotIn(
-                "repository:",
-                workflow,
-                "toolchain checkouts must stay inside the pinned composite action",
-            )
-            self.assertNotIn(
-                "ref:",
-                workflow,
-                "toolchain checkout refs must stay inside the pinned composite action",
-            )
+        self.assertEqual(
+            self.validate.count("uses: ./.github/actions/toolchain"),
+            1,
+            "the validate workflow must consume the pinned toolchain action",
+        )
+        self.assertNotIn(
+            "repository:",
+            self.validate,
+            "toolchain checkouts must stay inside the pinned composite action",
+        )
+        self.assertNotIn(
+            "ref:",
+            self.validate,
+            "toolchain checkout refs must stay inside the pinned composite action",
+        )
 
     def test_toolchain_reads_private_checkouts_with_deploy_keys(self) -> None:
         checkouts: dict[str, str] = {}
@@ -450,7 +427,6 @@ class GateContractTest(unittest.TestCase):
         third_party: list[str] = []
         for name, text in (
             ("validate", self.validate),
-            ("publish", self.publish),
             ("toolchain action", self.toolchain),
         ):
             for use in re.findall(r"(?m)^\s+uses:\s*(\S+)", text):
@@ -461,7 +437,7 @@ class GateContractTest(unittest.TestCase):
                     self.assertRegex(use, ACTION_PIN)
         self.assertTrue(
             third_party,
-            "the workflows no longer use the pinned checkout and setup-go actions",
+            "the workflow no longer uses the pinned checkout and setup-go actions",
         )
 
 

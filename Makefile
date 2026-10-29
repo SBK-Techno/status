@@ -3,19 +3,11 @@ BRAND ?= .toolchain/brand
 STATUS_ROOT ?= $(CURDIR)
 GO ?= go
 
-# publish-check compares against the published commit. The publish workflow
-# passes PUBLISH_DECISION_FILE so the script, not the YAML, decides whether a
-# heartbeat is worth committing.
-PUBLISH_BASE ?= HEAD
-PUBLISH_DECISION_FILE ?=
-
-# Post-publish verification needs the deployed origin, so it is not in
-# GATE_TARGETS. SIGNATURE and HMAC_KEY_FILE enable direct HMAC verification;
-# without them the check binds the live bytes to the committed signed
-# document. STATUS_HEARTBEAT_HMAC supplies the key when no file is given.
+# Post-deploy verification needs the deployed origin, so it is not in
+# GATE_TARGETS. The edge serves the live document and the publisher writes it,
+# so the check reads the live document's freshness and compares the pages to
+# this build; it verifies no heartbeat signature.
 URL ?=
-SIGNATURE ?=
-HMAC_KEY_FILE ?=
 VERIFY_PUBLISHED_FLAGS ?=
 
 PLATFORM_DIR := $(abspath $(PLATFORM))
@@ -33,10 +25,10 @@ export PLATFORM_DIR
 # stay full commit SHAs.
 GATE_TARGETS := status-check test contract brand-check render-check artifact-check assets-check statuscheck governance-check actionlint hook hook-check lint
 
-.PHONY: $(GATE_TARGETS) hooks brand prune publish-check toolchain-check validate verify-published artifact cls-check
+.PHONY: $(GATE_TARGETS) hooks brand prune toolchain-check validate verify-published artifact cls-check
 
 # The platform owns the brand assets; this repository owns the rendered
-# pages and their publish-time snapshot. `-brand-only` stops genstatus from
+# pages and their build-time snapshot. `-brand-only` stops genstatus from
 # overwriting index.html with the template before the renderer can read the
 # previous snapshot binding, which is what keeps an unchanged document
 # byte-identical across rebuilds.
@@ -132,21 +124,11 @@ statuscheck: toolchain-check
 lint: toolchain-check
 	cd "$(PLATFORM_DIR)" && $(GO) run ./cmd/brandlint -root "$(PLATFORM_DIR)" -brand "$(BRAND_DIR)" -status "$(STATUS_ROOT)"
 
-# Answer "would this publish change anything?" after `make brand`. The script
-# owns the exact codes: 0 nothing to publish, 10 only the snapshot instant
-# changed, 20 drift that must be committed, 2 the site build or retention
-# check fails. GNU make collapses every nonzero recipe exit to 2, so call the
-# script directly when you need to distinguish them; the publish workflow
-# passes PUBLISH_DECISION_FILE and branches on the `changed` output instead.
-publish-check:
-	python3 scripts/publish_check.py --root "$(STATUS_ROOT)" --base "$(PUBLISH_BASE)" $(if $(PUBLISH_DECISION_FILE),--decision-file "$(PUBLISH_DECISION_FILE)")
-
 # Verify the deployed origin against the committed build. This is a
-# post-publish step, not a commit gate: it needs the network and the live
-# site, and CI is billing-blocked, so run it locally after the platform edge
-# deploy.
+# post-deploy step, not a commit gate: it needs the network and the live site,
+# so run it locally after the platform edge deploy.
 verify-published: toolchain-check
 	@test -n "$(URL)" || { echo "verify-published: set URL to the deployed status origin" >&2; exit 2; }
-	python3 scripts/verify_published.py --root "$(STATUS_ROOT)" --url "$(URL)" $(if $(SIGNATURE),--signature "$(SIGNATURE)") $(if $(HMAC_KEY_FILE),--hmac-key-file "$(HMAC_KEY_FILE)") $(VERIFY_PUBLISHED_FLAGS)
+	python3 scripts/verify_published.py --root "$(STATUS_ROOT)" --url "$(URL)" $(VERIFY_PUBLISHED_FLAGS)
 
 validate: $(GATE_TARGETS)

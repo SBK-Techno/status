@@ -2,18 +2,17 @@
 """Verify that the published status site is the artifact this repository built.
 
 The command is deliberately outside ``make validate``: every check below needs
-the deployed origin. It is bounded, read-only, and never prints a key or a
-signature. The published contract is:
+the deployed origin. It is bounded, read-only, and never prints a secret. The
+published contract is:
 
 * ``/status.json`` is live, is ``application/json``, has schema version 1, and
-  passes the same document validator as the repository. Its bytes are
-  identical to the committed ``status.json``, which the publish workflow
-  accepted only after ``scripts/heartbeat_signature.py`` verified its
-  HMAC-SHA256 signature. When the publish-run signature and key are supplied,
-  the live bytes are verified directly instead.
+  passes the same document validator as the repository. It is the publisher's
+  live heartbeat, so it must be fresh under the 15-minute rule; its bytes are
+  not expected to match the committed seed.
 * ``/`` and ``/404.html`` are live HTML and match the built pages byte for
-  byte. The page's ``data-status-digest`` is the SHA-256 of the live
-  ``status.json`` and its ``data-snapshot-at`` is the built snapshot instant.
+  byte. The page's ``data-status-digest`` is the SHA-256 of the committed
+  ``status.json`` it was rendered from, and its ``data-snapshot-at`` is the
+  built snapshot instant.
 * Every resource the pages reference is a manifest-owned content-hashed asset
   recorded by ``site.manifest.json`` or ``brand.manifest.json``, is live, and
   matches its recorded SHA-256, size, and media type. Fonts referenced by the
@@ -33,20 +32,19 @@ import argparse
 import hashlib
 import http.client
 import json
-import os
 import posixpath
 import re
 import ssl
 import sys
 import urllib.parse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
-import heartbeat_signature
 import site_build
 import validate_status
-from status_snapshot import document_digest, parse_timestamp
+from status_snapshot import document_digest, freshness, parse_timestamp
 
 STATUS_PATH = "/status.json"
 PAGES = ("index.html", "404.html")
@@ -610,15 +608,11 @@ class Verifier:
         *,
         root: Path,
         base: str,
-        signature: str | None = None,
-        hmac_key: bytes | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         max_bytes: int = DEFAULT_MAX_BYTES,
     ) -> None:
         self.root = root
         self.base = base
-        self.signature = signature
-        self.hmac_key = hmac_key
         self.client = HttpClient(timeout=timeout, max_bytes=max_bytes)
         self.results: list[CheckResult] = []
         self.cache: dict[tuple, Response] = {}
@@ -637,15 +631,14 @@ class Verifier:
         )
 
         status = self._status_live()
-        self._status_schema(status)
-        self._status_artifact(status)
-        self._status_signature(status)
+        document = self._status_schema(status)
+        self._status_freshness(document)
         pages = self._pages_live()
         self._page_artifact(pages)
         self._page_assets(pages)
         self._asset_integrity()
         self._asset_transitive()
-        self._snapshot(status, pages)
+        self._snapshot(pages)
         self._conditional(pages)
         self._no_listing()
         self._no_cookie()
@@ -742,74 +735,45 @@ class Verifier:
         )
         return response
 
-    def _status_schema(self, status: Response | None) -> None:
+    def _status_schema(self, status: Response | None) -> dict | None:
         if status is None:
             self._skip("status-schema", "status.json was not fetched")
-            return
+            return None
         try:
             document = json.loads(status.body)
         except json.JSONDecodeError as exc:
             self._fail("status-schema", f"status.json is not valid JSON: {exc}")
-            return
+            return None
         errors = validate_status.validate_document(document)
         if errors:
             shown = "; ".join(errors[:3])
             if len(errors) > 3:
                 shown += f"; and {len(errors) - 3} more"
             self._fail("status-schema", shown)
-            return
+            return None
         assert isinstance(document, dict)
         self._pass(
             "status-schema",
             f"version 1, {len(document['components'])} components, "
             f"{len(document['incidents'])} incidents",
         )
+        return document
 
-    def _status_artifact(self, status: Response | None) -> None:
-        if status is None or self.plan is None:
-            self._skip("status-artifact", "status.json was not fetched")
+    def _status_freshness(self, document: dict | None) -> None:
+        if document is None:
+            self._skip("status-freshness", "status.json did not pass the schema")
             return
-        live = document_digest(status.body)
-        built = document_digest(self.plan.status_bytes)
-        if status.body == self.plan.status_bytes:
+        reason, generated = freshness(document, datetime.now(timezone.utc))
+        if reason == "fresh":
+            assert generated is not None
             self._pass(
-                "status-artifact",
-                f"{len(status.body)} bytes match the committed status.json",
+                "status-freshness",
+                f"generated_at {generated:%Y-%m-%dT%H:%M:%SZ} is within 15 minutes",
             )
             return
         self._fail(
-            "status-artifact",
-            f"live sha256 {live} differs from the committed artifact {built}",
-        )
-
-    def _status_signature(self, status: Response | None) -> None:
-        if status is None or self.plan is None:
-            self._skip("status-signature", "status.json was not fetched")
-            return
-        if self.signature is not None:
-            try:
-                heartbeat_signature.verify(
-                    status.body, self.signature, self.hmac_key or b""
-                )
-            except heartbeat_signature.SignatureError as exc:
-                self._fail("status-signature", str(exc))
-                return
-            self._pass(
-                "status-signature",
-                "HMAC-SHA256 verified directly over the live bytes",
-            )
-            return
-        if status.body == self.plan.status_bytes:
-            self._pass(
-                "status-signature",
-                "live bytes match the committed status.json "
-                "(direct HMAC needs the publish-run signature)",
-            )
-            return
-        self._fail(
-            "status-signature",
-            "live status.json differs from the committed signed document; "
-            "no publish-run signature was supplied for direct verification",
+            "status-freshness",
+            f"the live document is {reason}; the publisher must keep it fresh",
         )
 
     def _pages_live(self) -> dict[str, Response]:
@@ -980,12 +944,12 @@ class Verifier:
                 f"{len(transitive)} stylesheet dependencies are live and match",
             )
 
-    def _snapshot(self, status: Response | None, pages: dict[str, Response]) -> None:
+    def _snapshot(self, pages: dict[str, Response]) -> None:
         if self.plan is None:
             self._skip("snapshot", "the local build is unavailable")
             return
-        if status is None or "index.html" not in pages:
-            self._skip("snapshot", "the live page or status.json was not fetched")
+        if "index.html" not in pages:
+            self._skip("snapshot", "the live index.html was not fetched")
             return
         try:
             live_attributes = site_build.body_attributes(
@@ -997,10 +961,10 @@ class Verifier:
         live_digest = live_attributes.get("data-status-digest", "")
         live_at = live_attributes.get("data-snapshot-at", "")
         failures: list[str] = []
-        if live_digest != document_digest(status.body):
-            failures.append("page digest does not match the live status.json digest")
         if live_digest != self.plan.digest:
-            failures.append("page digest does not match the built artifact")
+            failures.append(
+                "page digest does not match the committed status.json it was built from"
+            )
         if live_at != self.plan.snapshot_at:
             failures.append(
                 f"snapshot instant {live_at!r} does not match the built "
@@ -1013,7 +977,7 @@ class Verifier:
         else:
             self._pass(
                 "snapshot",
-                f"digest {live_digest[:12]} and instant {live_at} agree",
+                f"digest {live_digest[:12]} and instant {live_at} bind the page to its build",
             )
 
     def _conditional(self, pages: dict[str, Response]) -> None:
@@ -1108,8 +1072,6 @@ def verify(
     root: Path,
     url: str,
     *,
-    signature: str | None = None,
-    hmac_key: bytes | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> Report:
@@ -1117,8 +1079,6 @@ def verify(
     return Verifier(
         root=root,
         base=base,
-        signature=signature,
-        hmac_key=hmac_key,
         timeout=timeout,
         max_bytes=max_bytes,
     ).run()
@@ -1154,15 +1114,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--url", required=True, help="published site root URL")
     parser.add_argument(
-        "--signature",
-        help="publish-run HMAC signature for direct verification",
-    )
-    parser.add_argument(
-        "--hmac-key-file",
-        type=Path,
-        help="file holding the HMAC key (default: STATUS_HEARTBEAT_HMAC)",
-    )
-    parser.add_argument(
         "--timeout",
         type=float,
         default=DEFAULT_TIMEOUT,
@@ -1182,32 +1133,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
         return 2
 
-    key: bytes | None = None
-    if args.signature:
-        if args.hmac_key_file is not None:
-            try:
-                key = heartbeat_signature.load_key(args.hmac_key_file)
-            except heartbeat_signature.SignatureError as exc:
-                parser.error(str(exc))
-                return 2
-        else:
-            encoded = os.environ.get("STATUS_HEARTBEAT_HMAC", "")
-            if not encoded:
-                parser.error(
-                    "--signature requires --hmac-key-file or STATUS_HEARTBEAT_HMAC"
-                )
-                return 2
-            key = encoded.encode("utf-8")
-    elif args.hmac_key_file is not None:
-        parser.error("--hmac-key-file requires --signature")
-        return 2
-
     try:
         report = verify(
             args.root,
             base,
-            signature=args.signature,
-            hmac_key=key,
             timeout=args.timeout,
             max_bytes=args.max_bytes,
         )

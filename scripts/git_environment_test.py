@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Prove a pre-push GIT_DIR cannot redirect the status checks.
 
-Git exports repository-local variables to hooks. The publish fixtures commit
-into temporary repositories with ``git -C``, and the governance check reads the
-platform checkout the same way, so an inherited GIT_DIR used to point both at
+Git exports repository-local variables to hooks. The governance check reads the
+platform checkout with ``git -C``, so an inherited GIT_DIR used to point it at
 the status repository. This test creates a decoy repository, exports its
-GIT_DIR and GIT_WORK_TREE, and requires the real fixtures and the governance
-check to pass. The bypass assertion shows that an unsanitized child really does
-read the decoy, so the test would fail without the helper.
+GIT_DIR and GIT_WORK_TREE, and requires the governance check to pass. The
+bypass assertion shows that an unsanitized child really does read the decoy, so
+the test would fail without the helper.
 """
 
 from __future__ import annotations
@@ -89,35 +88,6 @@ class GitEnvironmentTest(unittest.TestCase):
                 )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(Path(result.stdout.strip()).resolve(), target.resolve())
-
-    def test_publish_fixtures_ignore_an_exported_git_directory(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="status-git-env-") as temporary:
-            decoy = Path(temporary) / "decoy"
-            make_repository(decoy)
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "unittest",
-                    "discover",
-                    "-s",
-                    "scripts",
-                    "-p",
-                    "publish_check_test.py",
-                ],
-                cwd=ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=decoy_environment(decoy),
-            )
-            self.assertEqual(
-                result.returncode,
-                0,
-                f"publish fixtures read the decoy repository:\n"
-                f"{result.stdout}\n{result.stderr}",
-            )
 
     def test_governance_check_ignores_an_exported_git_directory(self) -> None:
         platform = Path(

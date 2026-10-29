@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Validate the public status document and the static site contract.
 
-The same validator runs on every push and on a dispatched heartbeat, so the
-seed, the published document, and the page cannot drift apart.
+The same validator runs on every push and against the live document in the
+post-deploy check, so the seed, the live document, and the page cannot drift
+apart.
 """
 
 from __future__ import annotations
