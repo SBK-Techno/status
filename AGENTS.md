@@ -16,6 +16,12 @@
 
 If a source and this file disagree, the source wins and this file is regenerated.
 
+## Repository notes
+
+The architecture and operations detail behind this repository lives in
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md). Keep that page current with the code; this file and the
+README stay summaries.
+
 ## What we are building
 
 A multi-tenant AI platform for SBK Techno: isolated client apps on client domains, an operator portal,
