@@ -1,6 +1,14 @@
 name: Status toolchain
 description: Check out the pinned platform and brand inputs and install Go.
 
+inputs:
+  platform_read_key:
+    description: Read-only deploy key for SBK-Techno/platform.
+    required: true
+  brand_read_key:
+    description: Read-only deploy key for SBK-Techno/brand.
+    required: true
+
 runs:
   using: composite
   steps:
@@ -12,7 +20,7 @@ runs:
         path: .toolchain/platform
         # SBK-Techno/platform is private. The repository secret holds a
         # read-only deploy key; no credential lives in this checkout.
-        ssh-key: ${{ secrets.PLATFORM_READ_KEY }}
+        ssh-key: ${{ inputs.platform_read_key }}
         persist-credentials: false
 
     - name: Check out the brand layer
@@ -22,7 +30,7 @@ runs:
         ref: 0c2ed17b3fba9048c0b2bf016a4074f3eb761c27
         path: .toolchain/brand
         # SBK-Techno/brand is private too; the deploy key is read-only.
-        ssh-key: ${{ secrets.BRAND_READ_KEY }}
+        ssh-key: ${{ inputs.brand_read_key }}
         persist-credentials: false
 
     - name: Set up Go

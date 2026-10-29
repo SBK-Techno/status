@@ -30,6 +30,9 @@ jobs:
       # exact platform and brand commits so local and CI builds agree.
       - name: Set up the pinned status toolchain
         uses: ./.github/actions/toolchain
+        with:
+          platform_read_key: ${{ secrets.PLATFORM_READ_KEY }}
+          brand_read_key: ${{ secrets.BRAND_READ_KEY }}
 
       - name: Run the local validation gate
         run: make validate

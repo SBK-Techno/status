@@ -32,6 +32,9 @@ jobs:
 
       - name: Set up the pinned status toolchain
         uses: ./.github/actions/toolchain
+        with:
+          platform_read_key: ${{ secrets.PLATFORM_READ_KEY }}
+          brand_read_key: ${{ secrets.BRAND_READ_KEY }}
 
       # The verifier and the post-publish check share
       # scripts/heartbeat_signature.py, so the publish-time HMAC contract has
