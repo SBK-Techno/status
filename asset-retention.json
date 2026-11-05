@@ -3,104 +3,16 @@
   "retentionDays": 7,
   "retired": [
     {
-      "file": "archivo-400.4b9ff27fd9c6.woff2",
-      "retired_at": "2026-10-27T12:27:10Z"
-    },
-    {
-      "file": "archivo-700.f8c7935631ed.woff2",
-      "retired_at": "2026-10-27T12:27:10Z"
-    },
-    {
-      "file": "archivo-display.32488d08b473.woff2",
-      "retired_at": "2026-10-27T12:27:10Z"
-    },
-    {
-      "file": "archivo-italic-400.84377d8fd063.woff2",
-      "retired_at": "2026-10-27T12:27:10Z"
-    },
-    {
-      "file": "assets/app.c8bcc4efafa5.js",
-      "retired_at": "2026-10-28T21:00:39Z"
-    },
-    {
-      "file": "assets/print.4fb9fd36d609.css",
-      "retired_at": "2026-10-28T16:31:08Z"
-    },
-    {
-      "file": "assets/print.5cb90a9ba4a8.css",
-      "retired_at": "2026-10-27T12:36:49Z"
-    },
-    {
-      "file": "assets/print.726f0b48bd21.css",
-      "retired_at": "2026-10-29T00:44:47Z"
-    },
-    {
-      "file": "assets/print.7d9d6b9736ae.css",
-      "retired_at": "2026-10-28T22:56:23Z"
-    },
-    {
       "file": "assets/print.d52de237a589.css",
       "retired_at": "2026-10-29T18:33:39Z"
-    },
-    {
-      "file": "assets/print.e8eebda08685.css",
-      "retired_at": "2026-10-27T12:27:10Z"
-    },
-    {
-      "file": "assets/status-model.8a886c35f08a.js",
-      "retired_at": "2026-10-28T21:00:39Z"
-    },
-    {
-      "file": "assets/styles.5227331ecc90.css",
-      "retired_at": "2026-10-28T20:55:52Z"
-    },
-    {
-      "file": "brand.58ecc1098195.css",
-      "retired_at": "2026-10-28T16:31:08Z"
-    },
-    {
-      "file": "brand.6835ef11301c.css",
-      "retired_at": "2026-10-28T22:56:23Z"
-    },
-    {
-      "file": "brand.875bfe96a455.css",
-      "retired_at": "2026-10-27T12:36:49Z"
-    },
-    {
-      "file": "brand.a423189168d5.css",
-      "retired_at": "2026-10-27T12:27:10Z"
     },
     {
       "file": "brand.b4a1765d435d.css",
       "retired_at": "2026-10-29T18:33:39Z"
     },
     {
-      "file": "brand.eced3b4aeaae.css",
-      "retired_at": "2026-10-29T00:44:47Z"
-    },
-    {
       "file": "fraunces-soft100-var.926d4a43f89c.woff2",
       "retired_at": "2026-10-29T18:33:39Z"
-    },
-    {
-      "file": "fraunces-soft100-var.928aac42ba6e.woff2",
-      "retired_at": "2026-10-29T00:44:47Z"
-    },
-    {
-      "file": "fraunces-soft100-var.b8e2ade5f69c.woff2",
-      "retired_at": "2026-10-27T12:27:10Z"
-    },
-    {
-      "file": "fraunces-soft100-var.d160f5e02486.woff2",
-      "retired_at": "2026-10-28T22:56:23Z"
-    },
-    {
-      "file": "ibm-plex-mono-400.e7383c9b2d82.woff2",
-      "retired_at": "2026-10-27T12:27:10Z"
-    },
-    {
-      "file": "ibm-plex-mono-500.8e00626281d5.woff2",
-      "retired_at": "2026-10-27T12:27:10Z"
     }
   ]
 }

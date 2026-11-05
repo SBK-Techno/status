@@ -2,7 +2,7 @@
 /* SBK Sans (OFL-1.1): Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo) */
 @font-face {
   font-family: SBK Sans;
-  src: url("archivo-400.4b9ff27fd9c6.woff2") format("woff2");
+  src: url("archivo-400.9708d725a531.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -10,15 +10,15 @@
 /* SBK Sans (OFL-1.1): Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo) */
 @font-face {
   font-family: SBK Sans;
-  src: url("archivo-700.f8c7935631ed.woff2") format("woff2");
-  font-weight: 700;
+  src: url("archivo-600.dc4b49d5506e.woff2") format("woff2");
+  font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
-/* SBK Sans Display (OFL-1.1): Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo) */
+/* SBK Sans (OFL-1.1): Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo) */
 @font-face {
-  font-family: SBK Sans Display;
-  src: url("archivo-display.32488d08b473.woff2") format("woff2");
+  font-family: SBK Sans;
+  src: url("archivo-700.13d8ac9de104.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -26,7 +26,7 @@
 /* SBK Sans (OFL-1.1): Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo) */
 @font-face {
   font-family: SBK Sans;
-  src: url("archivo-italic-400.84377d8fd063.woff2") format("woff2");
+  src: url("archivo-italic-400.b27556ff5c2a.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
   font-display: swap;
@@ -34,7 +34,7 @@
 /* SBK Serif (OFL-1.1): Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces) */
 @font-face {
   font-family: SBK Serif;
-  src: url("fraunces-soft100-var.b8e2ade5f69c.woff2") format("woff2");
+  src: url("fraunces-soft100-var.949d334fb8e8.woff2") format("woff2");
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
@@ -42,7 +42,7 @@
 /* SBK Mono (OFL-1.1): Copyright © 2017 IBM Corp. with Reserved Font Name "Plex" */
 @font-face {
   font-family: SBK Mono;
-  src: url("ibm-plex-mono-400.e7383c9b2d82.woff2") format("woff2");
+  src: url("ibm-plex-mono-400.11430b2c2e9e.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -50,7 +50,7 @@
 /* SBK Mono (OFL-1.1): Copyright © 2017 IBM Corp. with Reserved Font Name "Plex" */
 @font-face {
   font-family: SBK Mono;
-  src: url("ibm-plex-mono-500.8e00626281d5.woff2") format("woff2");
+  src: url("ibm-plex-mono-500.67413018f8e9.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -186,9 +186,19 @@
   --sbk-gutter: clamp(16px, 2.5vw, 56px);
   --sbk-measure: 65ch;
   --sbk-layout-max: 1120px;
-  --sbk-logo-header: 112px;
-  --sbk-logo-footer: 16px;
   --sbk-header-gap: 24px;
+
+  /* Logo geometry. tokens.json owns these values; consumers read the variables or logo-contract.json. */
+  --sbk-logo-header: 112px;
+  --sbk-logo-footer: 35px;
+  --sbk-logo-aspect: 2.398;
+  --sbk-logo-min-width: 240px;
+  --sbk-logo-min-print: 33mm;
+  --sbk-icon-min: 16px;
+
+  /* Print ink and paper. The print layer never depends on a background that a printer may drop. */
+  --sbk-print-ink: #000000;
+  --sbk-print-paper: #FFFFFF;
 }
 
 /* Dark overrides every colour and elevation token. The legacy names are
@@ -428,9 +438,23 @@ hr {
 }
 
 .sbk-brand img {
+  aspect-ratio: var(--sbk-logo-aspect);
   display: block;
   height: auto;
   width: var(--sbk-logo-header);
+}
+
+/* The print and forced-colours layers swap the colour art for the mono art.
+   Screen readers see the link label, so both images are decorative. The
+   component rules win on specificity so a block image does not leak the mono
+   companion onto the screen. */
+.sbk-logo__mono {
+  display: none;
+}
+
+.sbk-brand img.sbk-logo__mono,
+.sbk-footer__mark.sbk-logo__mono {
+  display: none;
 }
 
 .sbk-footer {
@@ -620,11 +644,151 @@ hr {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  /* An explicit full-motion choice is the visitor's later, more specific
+     decision; it must be able to restore the authored durations. The OS
+     preference still wins for every surface that has no such choice. */
+  html:not([data-motion="full"]) *,
+  html:not([data-motion="full"]) *::before,
+  html:not([data-motion="full"]) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print owns a paper surface and a mono lockup. A reverse or white mark must
+   never be the only mark on a page whose background the printer drops, so the
+   colour art is hidden and the mono art is shown. Status colour becomes ink
+   because the printed page cannot rely on a tint surviving. */
+@media print {
+  html,
+  body,
+  .sbk-surface,
+  .sbk-header,
+  .sbk-footer {
+    background: var(--sbk-print-paper);
+    color: var(--sbk-print-ink);
+  }
+
+  .sbk-header {
+    border-bottom-color: var(--sbk-print-ink);
+    border-top-color: var(--sbk-print-ink);
+  }
+
+  .sbk-footer {
+    border-top-color: var(--sbk-print-ink);
+  }
+
+  a {
+    color: var(--sbk-print-ink);
+  }
+
+  .sbk-panel,
+  .sbk-table-wrap,
+  pre {
+    border-color: var(--sbk-print-ink);
+    box-shadow: none;
+  }
+
+  .sbk-table thead th {
+    background: transparent;
+    color: var(--sbk-print-ink);
+  }
+
+  .sbk-eyebrow,
+  .sbk-lede,
+  .sbk-meta,
+  .sbk-quiet,
+  .sbk-badge {
+    color: var(--sbk-print-ink);
+  }
+
+  .sbk-button,
+  .sbk-button--quiet {
+    background: transparent;
+    border-color: var(--sbk-print-ink);
+    color: var(--sbk-print-ink);
+  }
+
+  .sbk-status,
+  .sbk-status--operational,
+  .sbk-status--degraded,
+  .sbk-status--partial_outage,
+  .sbk-status--major_outage,
+  .sbk-status--maintenance,
+  .sbk-status--unknown,
+  .sbk-badge--set {
+    background: transparent;
+    border-color: var(--sbk-print-ink);
+    color: var(--sbk-print-ink);
+  }
+
+  .sbk-logo__color {
+    display: none;
+  }
+
+  .sbk-brand img.sbk-logo__color,
+  .sbk-footer__mark.sbk-logo__color {
+    display: none;
+  }
+
+  .sbk-logo__mono {
+    display: inline;
+  }
+
+  .sbk-brand img.sbk-logo__mono {
+    display: block;
+  }
+
+  .sbk-footer__mark.sbk-logo__mono {
+    display: inline;
+  }
+}
+
+/* Forced colours replaces author backgrounds with Canvas. A white or reverse
+   mark can disappear, so the mono art is the only visible mark again. The mono
+   art keeps a paper plate with forced-color-adjust: none, so black ink stays
+   legible even when the system Canvas is dark. System colours carry the
+   boundaries the UA would otherwise flatten. */
+@media (forced-colors: active) {
+  .sbk-logo__color {
+    display: none;
+  }
+
+  .sbk-brand img.sbk-logo__color,
+  .sbk-footer__mark.sbk-logo__color {
+    display: none;
+  }
+
+  .sbk-logo__mono {
+    background: var(--sbk-print-paper);
+    display: inline;
+    forced-color-adjust: none;
+  }
+
+  .sbk-brand img.sbk-logo__mono {
+    display: block;
+  }
+
+  .sbk-footer__mark.sbk-logo__mono {
+    display: inline;
+  }
+
+  .sbk-header,
+  .sbk-footer,
+  .sbk-panel,
+  .sbk-table-wrap,
+  pre,
+  .sbk-status,
+  .sbk-badge {
+    border-color: CanvasText;
+  }
+
+  .sbk-button {
+    border-color: ButtonText;
+  }
+
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline-color: Highlight;
   }
 }
