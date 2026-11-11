@@ -324,6 +324,37 @@ make brand-check
 make verify-published
 ```
 
+## Repository layout
+
+Paths are declared in `std/repos.yaml`. Directories are created when needed.
+From the platform checkout, `make layout-check` rejects undeclared tracked paths, disposable
+output, compiled executables, and misplaced Go source. Run
+`make layout-all-check WORKSPACE=<directory>` there to check every registered checkout without
+writing to it. Exact files do not allow child paths;
+asset patterns match filenames, and disposable directory names apply at every depth.
+
+| Purpose | Paths |
+|---|---|
+| Source and shared SDKs | `templates` |
+| Documentation | `docs` |
+| Scripts | `scripts` |
+| Configuration and standards | `.github`, `.githooks` |
+| Durable generated assets | `assets` |
+| Exact repository files | `.gitignore`, `AGENTS.md`, `CODEOWNERS`, `CONTRIBUTING.md`, `Makefile`, `README.md`, `SECURITY.md`, `app.js`, `status-model.js`, `styles.css`, `index.html`, `404.html`, `site.manifest.json`, `brand.manifest.json`, `asset-retention.json`, `status.json` |
+| Durable asset filename patterns | `archivo-*.*.woff2`, `fraunces-soft100-var.*.woff2`, `ibm-plex-mono-*.*.woff2`, `brand.*.css`, `favicon.*.ico`, `icon-color.*.svg`, `logo-reverse.*.svg` |
+| Disposable build output | `bin`, `dist`, `tmp`, `.cache`, `.toolchain` |
+| Disposable directory names at any depth | `node_modules`, `__pycache__`, `.hyperframes`, `.toolchain`, `.cache` |
+
+Durable asset filename exceptions preserve published URLs:
+
+- `archivo-*.*.woff2`: Published brand fonts retain stable root URLs across status releases.
+- `fraunces-soft100-var.*.woff2`: Published and retained serif font revisions use root URLs.
+- `ibm-plex-mono-*.*.woff2`: Published brand monospace fonts use root URLs.
+- `brand.*.css`: Published and retained brand stylesheets use root URLs.
+- `favicon.*.ico`: Published favicon revisions use root URLs.
+- `icon-color.*.svg`: Published brand icon revisions use root URLs.
+- `logo-reverse.*.svg`: Published brand logo revisions use root URLs.
+
 ## Generated files
 
 This repository generates 5 files from `SBK-Techno/platform/std/repos.yaml` and `guides/`:
