@@ -36,10 +36,10 @@
     },
     {
       "name": "brand.css",
-      "file": "brand.978affc4ddd4.css",
+      "file": "brand.a81475a45b9a.css",
       "mediaType": "text/css; charset=utf-8",
       "publish": true,
-      "sha256": "978affc4ddd46edef7d2c53dc8a13cc67725b7b93a9fb928628796419bc13590",
+      "sha256": "a81475a45b9a50e5146cc228fd52eb3cd4098c7a7f37881d86b4bfc252dc6615",
       "bytes": 19237
     },
     {
@@ -52,11 +52,11 @@
     },
     {
       "name": "fraunces-soft100-var.woff2",
-      "file": "fraunces-soft100-var.6b255708d478.woff2",
+      "file": "fraunces-soft100-var.b73185f54a6d.woff2",
       "mediaType": "font/woff2",
       "publish": true,
-      "sha256": "6b255708d4787b12d9f419d6249942e4704716800ea5c7117c93c0080d34f6ca",
-      "bytes": 39796
+      "sha256": "b73185f54a6ddb7e9500173c11e5d4375e2c3ac78a69e86ea189ee2729203581",
+      "bytes": 39844
     },
     {
       "name": "ibm-plex-mono-400.woff2",
