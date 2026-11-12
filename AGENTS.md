@@ -66,7 +66,10 @@ every human-facing surface is French.
   time. Never assert wall-clock latency in a test.
 - Every change is verified three ways: baseline evidence, a targeted regression check after the
   final edit, and an independent gate.
-- Open a pull request. Never push to `main`, never merge, and never approve your own work.
+- Regularly promote completed, independently reviewed and verified milestones to `main` through
+  pull requests. Working branches are temporary; do not retain finished work indefinitely or wait
+  for a larger initiative to finish. Preserve unfinished work and retire merged branches only
+  after proving no unique work remains. Never push directly to `main` or approve your own work.
 - Installing a package or running `sudo` is operator-assisted, not blocked. Implement the script,
   the verification, and the rollback, then give the operator one exact command.
 

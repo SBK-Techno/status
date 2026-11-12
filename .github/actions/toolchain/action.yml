@@ -16,7 +16,7 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: SBK-Techno/platform
-        ref: 0e32eb9e6f9793283dd38b10e10a086f0bd7e665
+        ref: 260944e6408bf35228ff8613e815ee8eb78bda78
         path: .toolchain/platform
         # SBK-Techno/platform is private. The repository secret holds a
         # read-only deploy key; no credential lives in this checkout.
@@ -27,7 +27,7 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: SBK-Techno/brand
-        ref: a72625044b2cf00072cd240760153c6f493b1b10
+        ref: 5fab065d030a0bcefed0a8ee56cc972c0e94b6a5
         path: .toolchain/brand
         # SBK-Techno/brand is private too; the deploy key is read-only.
         ssh-key: ${{ inputs.brand_read_key }}
