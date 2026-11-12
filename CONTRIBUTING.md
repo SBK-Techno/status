@@ -15,6 +15,10 @@ token.
 
 Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `infra`.
 
+Working branches are temporary. Regularly promote completed, reviewed and verified milestones to
+`main` through pull requests, without waiting for a larger initiative to finish. Preserve unfinished
+work and retire merged branches only after proving that no unique work remains.
+
 ## Commits
 
 Conventional Commits, English, sentence case after the colon:
@@ -33,6 +37,7 @@ One logical change per commit. No mixed refactor, feature, and formatting.
 - Include a screenshot for a UI change and confirm the French review.
 - Label `ai-assisted` when an agent contributed.
 - Never merge your own change without review.
+- Never push directly to `main` or bypass required checks to promote a milestone.
 
 ## Definition of done
 
